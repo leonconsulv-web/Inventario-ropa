@@ -1,0 +1,30 @@
+# Streamlit
+.streamlit/secrets.toml
+
+# Credenciales
+credentials.json
+*.json
+*.p12
+*.key
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Entorno virtual
+venv/
+env/
+.vscode/
+.venv/
+
+# Sistema
+.DS_Store
+Thumbs.db
