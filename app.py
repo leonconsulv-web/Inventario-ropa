@@ -35,7 +35,7 @@ class GSheetsConnection(ExperimentalBaseConnection):
         @cache_data(ttl=300)
         def _get_data(spreadsheet_url, worksheet_name):
             client = self._connect()
-            spreadsheet = client.open_by_url("spreadsheet_url")
+            spreadsheet = client.open_by_url(spreadsheet_url)
             worksheet = spreadsheet.worksheet(worksheet_name)
             
             # Obtener todos los registros
@@ -65,13 +65,13 @@ class GSheetsConnection(ExperimentalBaseConnection):
         # Convertir DataFrame a lista de listas
         if isinstance(data, pd.DataFrame):
             # Incluir headers
-            values = [data.columns.tolist()] + data.values.tolist()
+            values = [data.columns.tolist()] + data.fillna('').values.tolist()  
         else:
             values = data
         
         # Actualizar toda la hoja
         worksheet.clear()
-        worksheet.update(values)
+        worksheet.update(values, value_input_option='USER_ENTERED')  
         
         return True
 
