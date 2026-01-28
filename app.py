@@ -115,13 +115,8 @@ def login_section():
             hashed_input = hashlib.sha256(password.encode()).hexdigest()
             
             # Obtener hash de secrets
-            stored_hash = st.secrets["admin_password_hash"]
+            stored_hash = st.secrets["michiotaku"]
             
-            # DEBUG: Descomentar para ver qué está pasando
-            # st.write(f"DEBUG - Password ingresada: '{password}'")
-            # st.write(f"DEBUG - Hash generado: {hashed_input}")
-            # st.write(f"DEBUG - Hash almacenado: {stored_hash}")
-            # st.write(f"DEBUG - ¿Son iguales?: {hashed_input == stored_hash}")
             
             if hashed_input == stored_hash:
                 st.session_state.admin_logged_in = True
