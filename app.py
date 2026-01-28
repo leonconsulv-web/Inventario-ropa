@@ -83,7 +83,7 @@ def init_connection():
 conn = init_connection()
 
 # URL de la hoja de Google Sheets (configurar en secrets)
-SPREADSHEET_URL = st.secrets["https://docs.google.com/spreadsheets/d/1-HIWA5fQwwRTB4YAwNlH0Wv4rvL31971jp4Ogw5Ajkk/edit"]
+SPREADSHEET_URL = st.secrets["spreadsheet_url"]
 
 # Función para autenticación
 def check_password():
