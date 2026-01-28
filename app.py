@@ -116,6 +116,11 @@ def login_section():
             
             # Obtener hash de secrets
             stored_hash = st.secrets["michiotaku"]
+
+            st.write(f"DEBUG - Password ingresada: '{password}'")
+            st.write(f"DEBUG - Hash generado: {hashed_input}")
+            st.write(f"DEBUG - Hash almacenado: {stored_hash}")
+            st.write(f"DEBUG - ¿Son iguales?: {hashed_input == stored_hash}")
             
             
             if hashed_input == stored_hash:
