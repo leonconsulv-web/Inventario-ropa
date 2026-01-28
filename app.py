@@ -35,7 +35,7 @@ class GSheetsConnection(ExperimentalBaseConnection):
         @cache_data(ttl=300)
         def _get_data(spreadsheet_url, worksheet_name):
             client = self._connect()
-            spreadsheet = client.open_by_url(https://docs.google.com/spreadsheets/d/1-HIWA5fQwwRTB4YAwNlH0Wv4rvL31971jp4Ogw5Ajkk/edit)
+            spreadsheet = client.open_by_url("https://docs.google.com/spreadsheets/d/1-HIWA5fQwwRTB4YAwNlH0Wv4rvL31971jp4Ogw5Ajkk/edit")
             worksheet = spreadsheet.worksheet(inventario)
             
             # Obtener todos los registros
