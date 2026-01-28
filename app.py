@@ -103,15 +103,27 @@ def login_section():
     
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        password = st.text_input("Contraseña:", type="password", key="michiotaku")
-        login_button = st.button("Ingresar")
+        # CAMBIA ESTA LÍNEA - key única sin conflictos
+        password = st.text_input("Contraseña:", 
+                                type="password", 
+                                key="admin_pass_input_2024")  # ← Key única
+        
+        login_button = st.button("Ingresar", key="login_btn_2024")
         
         if login_button:
-            # Hash de la contraseña (en producción usaría algo más seguro como bcrypt)
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            stored_hash = st.secrets.get("admin_password_hash", "")
+            # Hash de la contraseña ingresada
+            hashed_input = hashlib.sha256(password.encode()).hexdigest()
             
-            if hashed_password == stored_hash:
+            # Obtener hash de secrets
+            stored_hash = st.secrets["admin_password_hash"]
+            
+            # DEBUG: Descomentar para ver qué está pasando
+            # st.write(f"DEBUG - Password ingresada: '{password}'")
+            # st.write(f"DEBUG - Hash generado: {hashed_input}")
+            # st.write(f"DEBUG - Hash almacenado: {stored_hash}")
+            # st.write(f"DEBUG - ¿Son iguales?: {hashed_input == stored_hash}")
+            
+            if hashed_input == stored_hash:
                 st.session_state.admin_logged_in = True
                 st.success("✅ Acceso concedido")
                 st.rerun()
