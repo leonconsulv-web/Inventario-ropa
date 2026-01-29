@@ -27,7 +27,7 @@ if 'config_tallas' not in st.session_state:
         'superior': ['Unitalla', 'XCH', 'CH', 'M', 'G', 'XG', 'XXG'],
         'inferior': ['Unitalla', '28', '30', '32', '34', '36', '38', '40', '42'],
         'accesorios': ['Unitalla'],
-        'personalizado': ['Unitalla']  # Para categorías personalizadas
+        'personalizado': ['Unitalla']
     }
 
 # Categorías base (no editables)
@@ -238,7 +238,7 @@ def ajustar_stock(producto_id, nueva_cantidad):
     return False, "Producto no encontrado"
 
 # ============================================
-# INTERFAZ PRINCIPAL
+# INTERFAZ PRINCIPAL - CORREGIDA
 # ============================================
 def main():
     st.title("👔 Inventario Ropa de Caballero")
@@ -261,17 +261,23 @@ def main():
             st.markdown("### 🎽 Accesorios y Personalizadas")
             st.write("**Categorías base:** Cinturones, Gorras, Medias, Bufandas")
             st.write("**Talla:** Unitalla (puedes agregar más categorías)")
-            st.write("**💡 Tip:** Todas las categorías tienen opción 'Unitalla'")
     
     st.markdown("---")
     
-    # Convertir a DataFrame
+    # Convertir a DataFrame y asegurar columna 'Tipo'
+    inventario_con_tipo = []
+    for item in st.session_state.inventario:
+        if 'Tipo' not in item:
+            item['Tipo'] = obtener_tipo_categoria(item.get('Categoria', ''))
+        inventario_con_tipo.append(item)
+    
+    st.session_state.inventario = inventario_con_tipo
     df = pd.DataFrame(st.session_state.inventario)
     
     # Pestañas
     tab1, tab2, tab3 = st.tabs(["🛍️ Registrar Ventas", "📊 Reporte y Caja", "⚙️ Gestión Inventario"])
     
-    # TAB 1: REGISTRAR VENTAS
+    # TAB 1: REGISTRAR VENTAS - CORREGIDA
     with tab1:
         st.header("Registrar Ventas")
         
@@ -290,40 +296,48 @@ def main():
             with col_filt3:
                 search_term = st.text_input("🔍 Buscar producto:", "", key="search_ventas")
             
-            # Aplicar filtros
+            # Aplicar filtros - CORRECCIÓN: Manejar DataFrame vacío
             filtered_df = df.copy()
             
-            if categoria_filtro != 'Todas':
-                filtered_df = filtered_df[filtered_df['Categoria'] == categoria_filtro]
-            
-            if filtrar_tipo != 'Todos':
-                tipo_map = {
-                    'Parte Superior': 'superior',
-                    'Parte Inferior': 'inferior', 
-                    'Accesorios': 'accesorios',
-                    'Personalizado': 'personalizado'
-                }
-                if filtrar_tipo in tipo_map:
-                    filtered_df = filtered_df[filtered_df['Tipo'] == tipo_map[filtrar_tipo]]
-            
-            if search_term:
-                filtered_df = filtered_df[
-                    filtered_df['Producto'].str.contains(search_term, case=False, na=False) |
-                    filtered_df['Categoria'].str.contains(search_term, case=False, na=False) |
-                    filtered_df['Color'].str.contains(search_term, case=False, na=False) |
-                    filtered_df['Talla'].str.contains(search_term, case=False, na=False)
-                ]
+            if not df.empty:
+                if categoria_filtro != 'Todas':
+                    filtered_df = filtered_df[filtered_df['Categoria'] == categoria_filtro]
+                
+                if filtrar_tipo != 'Todos':
+                    tipo_map = {
+                        'Parte Superior': 'superior',
+                        'Parte Inferior': 'inferior', 
+                        'Accesorios': 'accesorios',
+                        'Personalizado': 'personalizado'
+                    }
+                    if filtrar_tipo in tipo_map:
+                        filtered_df = filtered_df[filtered_df['Tipo'] == tipo_map[filtrar_tipo]]
+                
+                if search_term:
+                    filtered_df = filtered_df[
+                        filtered_df['Producto'].str.contains(search_term, case=False, na=False) |
+                        filtered_df['Categoria'].str.contains(search_term, case=False, na=False) |
+                        filtered_df['Color'].str.contains(search_term, case=False, na=False) |
+                        filtered_df['Talla'].str.contains(search_term, case=False, na=False)
+                    ]
             
             if filtered_df.empty:
                 st.info("No se encontraron productos con ese criterio.")
             else:
                 st.write(f"**📊 {len(filtered_df)} productos encontrados**")
                 
-                # Mostrar productos en tarjetas organizadas por tipo
-                tipos = filtered_df['Tipo'].unique()
+                # Verificar si tiene columna 'Tipo' - CORRECCIÓN
+                if 'Tipo' in filtered_df.columns:
+                    tipos = filtered_df['Tipo'].unique()
+                else:
+                    # Si no tiene columna Tipo, agrupar por categoría
+                    tipos = filtered_df['Categoria'].unique()
                 
                 for tipo in tipos:
-                    productos_tipo = filtered_df[filtered_df['Tipo'] == tipo]
+                    if 'Tipo' in filtered_df.columns:
+                        productos_tipo = filtered_df[filtered_df['Tipo'] == tipo]
+                    else:
+                        productos_tipo = filtered_df[filtered_df['Categoria'] == tipo]
                     
                     # Título según tipo
                     titulo_map = {
@@ -332,27 +346,54 @@ def main():
                         'accesorios': '🎽 Accesorios',
                         'personalizado': '📌 Categorías Personalizadas'
                     }
-                    st.markdown(f"### {titulo_map.get(tipo, '📦 Productos')}")
                     
-                    # Mostrar en columnas
-                    cols = st.columns(3)
+                    if tipo in titulo_map:
+                        st.markdown(f"### {titulo_map[tipo]}")
+                    else:
+                        st.markdown(f"### 📦 {tipo}")
+                    
+                    # Mostrar en columnas - máximo 3 columnas
+                    num_productos = len(productos_tipo)
+                    if num_productos == 0:
+                        continue
+                    
+                    # Crear columnas dinámicamente
+                    num_cols = min(3, num_productos)
+                    cols = st.columns(num_cols)
+                    
                     for idx, (_, row) in enumerate(productos_tipo.iterrows()):
-                        with cols[idx % 3]:
+                        with cols[idx % num_cols]:
                             with st.container(border=True):
                                 # Icono según tipo
-                                icono = "👕" if tipo == 'superior' else "👖" if tipo == 'inferior' else "🧦" if tipo == 'accesorios' else "📌"
+                                if 'Tipo' in row:
+                                    icono_map = {
+                                        'superior': '👕',
+                                        'inferior': '👖',
+                                        'accesorios': '🧦',
+                                        'personalizado': '📌'
+                                    }
+                                    icono = icono_map.get(row['Tipo'], '📦')
+                                else:
+                                    icono = '📦'
+                                
                                 st.markdown(f"### {icono} {row['Producto']}")
                                 st.markdown(f"**Categoría:** {row['Categoria']}")
                                 st.markdown(f"**Talla:** {row['Talla']} | **Color:** {row['Color']}")
                                 st.markdown(f"**Precio:** ${row['Precio']:,.2f}")
                                 
-                                # Barra de stock
-                                porcentaje_stock = (row['Stock'] / row['Entrada']) * 100 if row['Entrada'] > 0 else 0
-                                color_barra = "green" if porcentaje_stock > 50 else "orange" if porcentaje_stock > 20 else "red"
-                                st.progress(int(porcentaje_stock), 
-                                          text=f"Stock: {int(row['Stock'])}/{int(row['Entrada'])}")
+                                # Barra de stock con manejo de división por cero
+                                entrada = row['Entrada'] if 'Entrada' in row else 1
+                                stock = row['Stock'] if 'Stock' in row else 0
                                 
-                                if row['Stock'] > 0:
+                                if entrada > 0:
+                                    porcentaje_stock = (stock / entrada) * 100
+                                    color_barra = "green" if porcentaje_stock > 50 else "orange" if porcentaje_stock > 20 else "red"
+                                    st.progress(int(porcentaje_stock), 
+                                              text=f"Stock: {int(stock)}/{int(entrada)}")
+                                else:
+                                    st.progress(0, text=f"Stock: {int(stock)}/0")
+                                
+                                if stock > 0:
                                     if st.button("✅ Vender", key=f"vender_{row['ID']}", use_container_width=True):
                                         if registrar_venta(row['ID']):
                                             st.success(f"✅ Vendido: {row['Producto']}")
@@ -362,13 +403,23 @@ def main():
                                 else:
                                     st.error("❌ Sin stock", icon="⚠️")
     
-    # TAB 2: REPORTE Y CAJA
+    # TAB 2: REPORTE Y CAJA - CORREGIDA
     with tab2:
         st.header("📊 Reporte y Caja")
         
         if df.empty:
             st.info("No hay datos para mostrar. Agrega productos primero.")
         else:
+            # Asegurar que el DataFrame tenga las columnas necesarias
+            if 'Ventas' not in df.columns:
+                df['Ventas'] = 0
+            if 'Stock' not in df.columns:
+                df['Stock'] = 0
+            if 'Precio' not in df.columns:
+                df['Precio'] = 0.0
+            if 'Tipo' not in df.columns:
+                df['Tipo'] = df['Categoria'].apply(obtener_tipo_categoria)
+            
             # Métricas principales
             col1, col2, col3, col4 = st.columns(4)
             
@@ -390,24 +441,26 @@ def main():
             
             st.markdown("---")
             
-            # Estadísticas por tipo
-            st.subheader("📈 Estadísticas por Tipo de Prenda")
-            
-            tipo_map_display = {
-                'superior': '🔝 Parte Superior',
-                'inferior': '👖 Parte Inferior',
-                'accesorios': '🎽 Accesorios',
-                'personalizado': '📌 Personalizado'
-            }
-            
-            tipos_presentes = df['Tipo'].unique()
-            cols_tipos = st.columns(len(tipos_presentes))
-            
-            for idx, tipo in enumerate(tipos_presentes):
-                with cols_tipos[idx]:
-                    ventas_tipo = df[df['Tipo'] == tipo]['Ventas'].sum()
-                    display_name = tipo_map_display.get(tipo, tipo)
-                    st.metric(display_name, f"{int(ventas_tipo)} ventas")
+            # Estadísticas por tipo - Solo si hay columna 'Tipo'
+            if 'Tipo' in df.columns:
+                st.subheader("📈 Estadísticas por Tipo de Prenda")
+                
+                tipo_map_display = {
+                    'superior': '🔝 Parte Superior',
+                    'inferior': '👖 Parte Inferior',
+                    'accesorios': '🎽 Accesorios',
+                    'personalizado': '📌 Personalizado'
+                }
+                
+                tipos_presentes = df['Tipo'].unique()
+                if len(tipos_presentes) > 0:
+                    cols_tipos = st.columns(len(tipos_presentes))
+                    
+                    for idx, tipo in enumerate(tipos_presentes):
+                        with cols_tipos[idx]:
+                            ventas_tipo = df[df['Tipo'] == tipo]['Ventas'].sum()
+                            display_name = tipo_map_display.get(tipo, tipo)
+                            st.metric(display_name, f"{int(ventas_tipo)} ventas")
             
             st.markdown("---")
             
@@ -417,38 +470,41 @@ def main():
             with col1:
                 if not df.empty and 'Tipo' in df.columns:
                     ventas_por_tipo = df.groupby('Tipo')['Ventas'].sum().reset_index()
-                    if not ventas_por_tipo.empty:
+                    if not ventas_por_tipo.empty and len(ventas_por_tipo) > 0:
                         # Traducir tipos para el gráfico
                         ventas_por_tipo['Tipo'] = ventas_por_tipo['Tipo'].map(tipo_map_display)
+                        ventas_por_tipo = ventas_por_tipo.dropna()  # Eliminar NaN
                         
-                        fig = px.pie(
-                            ventas_por_tipo, 
-                            values='Ventas', 
-                            names='Tipo',
-                            title="📊 Ventas por Tipo de Prenda",
-                            color_discrete_sequence=px.colors.qualitative.Set3
-                        )
-                        fig.update_traces(textposition='inside', textinfo='percent+label')
-                        st.plotly_chart(fig, use_container_width=True)
+                        if not ventas_por_tipo.empty:
+                            fig = px.pie(
+                                ventas_por_tipo, 
+                                values='Ventas', 
+                                names='Tipo',
+                                title="📊 Ventas por Tipo de Prenda",
+                                color_discrete_sequence=px.colors.qualitative.Set3
+                            )
+                            fig.update_traces(textposition='inside', textinfo='percent+label')
+                            st.plotly_chart(fig, use_container_width=True)
             
             with col2:
                 if not df.empty and 'Categoria' in df.columns:
-                    # Tomar solo las top 10 categorías para el gráfico
                     ventas_por_categoria = df.groupby('Categoria')['Ventas'].sum().reset_index()
-                    ventas_por_categoria = ventas_por_categoria.sort_values('Ventas', ascending=False).head(10)
-                    
                     if not ventas_por_categoria.empty:
-                        fig = px.bar(
-                            ventas_por_categoria,
-                            x='Categoria',
-                            y='Ventas',
-                            title="🏆 Top 10 Categorías por Ventas",
-                            color='Ventas',
-                            text='Ventas'
-                        )
-                        fig.update_traces(textposition='outside')
-                        fig.update_layout(xaxis_tickangle=-45)
-                        st.plotly_chart(fig, use_container_width=True)
+                        # Tomar solo las top 10 categorías para el gráfico
+                        ventas_por_categoria = ventas_por_categoria.sort_values('Ventas', ascending=False).head(10)
+                        
+                        if not ventas_por_categoria.empty:
+                            fig = px.bar(
+                                ventas_por_categoria,
+                                x='Categoria',
+                                y='Ventas',
+                                title="🏆 Top 10 Categorías por Ventas",
+                                color='Ventas',
+                                text='Ventas'
+                            )
+                            fig.update_traces(textposition='outside')
+                            fig.update_layout(xaxis_tickangle=-45)
+                            st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("---")
             
@@ -458,23 +514,27 @@ def main():
             # Filtros para la tabla
             col_f1, col_f2, col_f3 = st.columns(3)
             with col_f1:
-                filtro_tipo_tabla = st.selectbox("Tipo:", 
-                                               ['Todos'] + [tipo_map_display.get(t, t) for t in sorted(df['Tipo'].unique())],
-                                               key="filtro_tipo_tabla")
+                # Opciones de filtro de tipo
+                opciones_tipo = ['Todos']
+                if 'Tipo' in df.columns:
+                    tipos_unicos = sorted(df['Tipo'].unique())
+                    for t in tipos_unicos:
+                        display_name = tipo_map_display.get(t, t)
+                        opciones_tipo.append(display_name)
+                
+                filtro_tipo_tabla = st.selectbox("Tipo:", opciones_tipo, key="filtro_tipo_tabla")
+            
             with col_f2:
                 todas_categorias_tabla = ['Todas'] + sorted(df['Categoria'].unique().tolist())
-                filtro_categoria = st.selectbox("Categoría:", 
-                                              todas_categorias_tabla,
-                                              key="filtro_categoria")
+                filtro_categoria = st.selectbox("Categoría:", todas_categorias_tabla, key="filtro_categoria")
+            
             with col_f3:
-                ordenar_por = st.selectbox("Ordenar por:", 
-                                         ['Producto', 'Stock', 'Ventas', 'Precio'],
-                                         key="ordenar_por")
+                ordenar_por = st.selectbox("Ordenar por:", ['Producto', 'Stock', 'Ventas', 'Precio'], key="ordenar_por")
             
             # Aplicar filtros a la tabla
             display_df = df.copy()
             
-            if filtro_tipo_tabla != 'Todos':
+            if filtro_tipo_tabla != 'Todos' and 'Tipo' in display_df.columns:
                 # Convertir display name back to tipo
                 tipo_reverse_map = {v: k for k, v in tipo_map_display.items()}
                 tipo_filtro = tipo_reverse_map.get(filtro_tipo_tabla, filtro_tipo_tabla)
@@ -494,28 +554,37 @@ def main():
                 display_df = display_df.sort_values('Producto')
             
             # Mostrar tabla formateada
-            display_df_formatted = display_df.copy()
-            display_df_formatted['Precio'] = display_df_formatted['Precio'].apply(lambda x: f"${x:,.2f}")
-            display_df_formatted['Tipo'] = display_df_formatted['Tipo'].map(tipo_map_display)
-            
-            columnas_mostrar = ['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']
-            columnas_disponibles = [col for col in columnas_mostrar if col in display_df_formatted.columns]
-            
-            st.dataframe(
-                display_df_formatted[columnas_disponibles],
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    'Tipo': st.column_config.TextColumn("Tipo"),
-                    'Categoria': st.column_config.TextColumn("Categoría"),
-                    'Producto': st.column_config.TextColumn("Producto"),
-                    'Talla': st.column_config.TextColumn("Talla"),
-                    'Color': st.column_config.TextColumn("Color"),
-                    'Stock': st.column_config.NumberColumn("Stock", format="%d"),
-                    'Ventas': st.column_config.NumberColumn("Ventas", format="%d"),
-                    'Precio': st.column_config.TextColumn("Precio")
-                }
-            )
+            if not display_df.empty:
+                display_df_formatted = display_df.copy()
+                display_df_formatted['Precio'] = display_df_formatted['Precio'].apply(lambda x: f"${x:,.2f}")
+                
+                if 'Tipo' in display_df_formatted.columns:
+                    display_df_formatted['Tipo'] = display_df_formatted['Tipo'].map(tipo_map_display)
+                
+                columnas_disponibles = []
+                columnas_posibles = ['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']
+                
+                for col in columnas_posibles:
+                    if col in display_df_formatted.columns:
+                        columnas_disponibles.append(col)
+                
+                st.dataframe(
+                    display_df_formatted[columnas_disponibles],
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        'Tipo': st.column_config.TextColumn("Tipo"),
+                        'Categoria': st.column_config.TextColumn("Categoría"),
+                        'Producto': st.column_config.TextColumn("Producto"),
+                        'Talla': st.column_config.TextColumn("Talla"),
+                        'Color': st.column_config.TextColumn("Color"),
+                        'Stock': st.column_config.NumberColumn("Stock", format="%d"),
+                        'Ventas': st.column_config.NumberColumn("Ventas", format="%d"),
+                        'Precio': st.column_config.TextColumn("Precio")
+                    }
+                )
+            else:
+                st.info("No hay productos que coincidan con los filtros seleccionados.")
             
             # Botones de exportación
             col_exp1, col_exp2 = st.columns(2)
@@ -538,7 +607,7 @@ def main():
                     st.success("Caja reiniciada")
                     st.rerun()
     
-    # TAB 3: GESTIÓN INVENTARIO
+    # TAB 3: GESTIÓN INVENTARIO - CORREGIDA
     with tab3:
         st.header("⚙️ Gestión de Inventario")
         
@@ -646,7 +715,7 @@ def main():
                     st.rerun()
                 
             else:
-                # Selección de modo (solo si no estamos en gestión de categorías)
+                # Selección de modo
                 st.subheader("📋 Acciones Disponibles")
                 
                 col1, col2, col3, col4 = st.columns(4)
@@ -886,7 +955,7 @@ def main():
                         
                         if productos_sin_ventas.empty:
                             st.warning("⚠️ No hay productos sin ventas. Solo se pueden eliminar productos que NO tienen ventas registradas.")
-                            st.dataframe(df[['Producto', 'Talla', 'Color', 'Ventas', 'Tipo']], use_container_width=True)
+                            st.dataframe(df[['Producto', 'Talla', 'Color', 'Ventas']], use_container_width=True)
                         else:
                             # Lista de productos sin ventas
                             productos_eliminar = {f"{row['Producto']} ({row['Talla']}, {row['Color']})": row['ID'] 
@@ -915,7 +984,8 @@ def main():
                                     
                                     col_info1, col_info2 = st.columns(2)
                                     with col_info1:
-                                        st.write(f"**{tipo_icono.get(producto_data['Tipo'], '📦')} Tipo:** {producto_data['Categoria']}")
+                                        tipo = producto_data.get('Tipo', 'desconocido')
+                                        st.write(f"**{tipo_icono.get(tipo, '📦')} Tipo:** {producto_data['Categoria']}")
                                         st.write(f"**Talla:** {producto_data['Talla']}")
                                     with col_info2:
                                         st.write(f"**Color:** {producto_data['Color']}")
@@ -956,16 +1026,6 @@ def main():
                             productos_con_stock = len(df[df['Stock'] > 0])
                             st.metric("📈 Productos con Stock", f"{productos_con_stock}")
                         
-                        # Estadísticas de tallas
-                        st.markdown("#### 📊 Distribución de Tallas")
-                        tallas_counts = df['Talla'].value_counts().reset_index()
-                        tallas_counts.columns = ['Talla', 'Cantidad']
-                        
-                        if not tallas_counts.empty:
-                            fig = px.bar(tallas_counts, x='Talla', y='Cantidad', 
-                                       title="Productos por Talla", color='Talla')
-                            st.plotly_chart(fig, use_container_width=True)
-                        
                         # Búsqueda en inventario
                         search_inv = st.text_input("🔍 Buscar en inventario:", key="search_inv")
                         
@@ -979,33 +1039,43 @@ def main():
                         else:
                             filtered_inv = df
                         
-                        # Mostrar tabla con acciones rápidas
-                        tipo_map_display_inv = {
-                            'superior': '🔝 Superior',
-                            'inferior': '👖 Inferior', 
-                            'accesorios': '🎽 Accesorio',
-                            'personalizado': '📌 Personalizado'
-                        }
-                        
-                        display_inv = filtered_inv.copy()
-                        display_inv['Tipo'] = display_inv['Tipo'].map(tipo_map_display_inv)
-                        display_inv['Precio'] = display_inv['Precio'].apply(lambda x: f"${x:,.2f}")
-                        
-                        st.dataframe(
-                            display_inv[['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']],
-                            use_container_width=True,
-                            hide_index=True,
-                            column_config={
-                                'Tipo': st.column_config.TextColumn("Tipo"),
-                                'Categoria': st.column_config.TextColumn("Categoría"),
-                                'Producto': st.column_config.TextColumn("Producto"),
-                                'Talla': st.column_config.TextColumn("Talla"),
-                                'Color': st.column_config.TextColumn("Color"),
-                                'Stock': st.column_config.NumberColumn("Stock", format="%d"),
-                                'Ventas': st.column_config.NumberColumn("Ventas", format="%d"),
-                                'Precio': st.column_config.TextColumn("Precio")
+                        # Mostrar tabla
+                        if not filtered_inv.empty:
+                            tipo_map_display_inv = {
+                                'superior': '🔝 Superior',
+                                'inferior': '👖 Inferior', 
+                                'accesorios': '🎽 Accesorio',
+                                'personalizado': '📌 Personalizado'
                             }
-                        )
+                            
+                            display_inv = filtered_inv.copy()
+                            display_inv['Precio'] = display_inv['Precio'].apply(lambda x: f"${x:,.2f}")
+                            
+                            if 'Tipo' in display_inv.columns:
+                                display_inv['Tipo'] = display_inv['Tipo'].map(tipo_map_display_inv)
+                            
+                            columnas_mostrar = []
+                            for col in ['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']:
+                                if col in display_inv.columns:
+                                    columnas_mostrar.append(col)
+                            
+                            st.dataframe(
+                                display_inv[columnas_mostrar],
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    'Tipo': st.column_config.TextColumn("Tipo"),
+                                    'Categoria': st.column_config.TextColumn("Categoría"),
+                                    'Producto': st.column_config.TextColumn("Producto"),
+                                    'Talla': st.column_config.TextColumn("Talla"),
+                                    'Color': st.column_config.TextColumn("Color"),
+                                    'Stock': st.column_config.NumberColumn("Stock", format="%d"),
+                                    'Ventas': st.column_config.NumberColumn("Ventas", format="%d"),
+                                    'Precio': st.column_config.TextColumn("Precio")
+                                }
+                            )
+                        else:
+                            st.info("No hay productos que coincidan con la búsqueda.")
 
 # ============================================
 # EJECUCIÓN
