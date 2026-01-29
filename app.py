@@ -18,49 +18,25 @@ st.set_page_config(
 # Contraseña
 CONTRASENA = "michiotaku"
 
-# Configuración inicial de categorías y tallas
+# Configuración inicial
 if 'categorias_personalizadas' not in st.session_state:
     st.session_state.categorias_personalizadas = []
-
-if 'config_tallas' not in st.session_state:
-    st.session_state.config_tallas = {
-        'superior': ['Unitalla', 'XCH', 'CH', 'M', 'G', 'XG', 'XXG'],
-        'inferior': ['Unitalla', '28', '30', '32', '34', '36', '38', '40', '42'],
-        'accesorios': ['Unitalla'],
-        'personalizado': ['Unitalla']
-    }
 
 if 'reset_graficas_fecha' not in st.session_state:
     st.session_state.reset_graficas_fecha = datetime.now().strftime('%Y-%m-%d')
 
-# Categorías base (no editables)
-CATEGORIAS_BASE = {
-    'superior': ['Camisas', 'Playeras', 'Suéteres', 'Chaquetas', 'Camisetas', 'Polos'],
-    'inferior': ['Pantalones', 'Shorts', 'Jeans', 'Bermudas'],
-    'accesorios': ['Cinturones', 'Gorras', 'Medias', 'Bufandas']
-}
+# Categorías base
+CATEGORIAS_BASE = [
+    'Camisas', 'Playeras', 'Suéteres', 'Chaquetas', 'Camisetas', 'Polos',
+    'Pantalones', 'Shorts', 'Jeans', 'Bermudas',
+    'Cinturones', 'Gorras', 'Medias', 'Bufandas'
+]
 
 # Obtener todas las categorías disponibles
 def obtener_todas_categorias():
-    todas = []
-    for tipo in CATEGORIAS_BASE:
-        todas.extend(CATEGORIAS_BASE[tipo])
+    todas = CATEGORIAS_BASE.copy()
     todas.extend(st.session_state.categorias_personalizadas)
     return sorted(list(set(todas)))
-
-# Determinar tipo de categoría
-def obtener_tipo_categoria(categoria):
-    """Determina si la categoría es superior, inferior, accesorio o personalizado"""
-    for tipo, categorias in CATEGORIAS_BASE.items():
-        if categoria in categorias:
-            return tipo
-    return 'personalizado'
-
-# Obtener tallas disponibles para una categoría
-def obtener_tallas_disponibles(categoria):
-    """Obtiene las tallas disponibles para una categoría"""
-    tipo = obtener_tipo_categoria(categoria)
-    return st.session_state.config_tallas.get(tipo, ['Unitalla'])
 
 # Inicializar estados
 if 'admin_logged_in' not in st.session_state:
@@ -184,8 +160,6 @@ def registrar_venta(producto_id):
 
 def agregar_producto(nuevo_producto):
     """Agregar nuevo producto al inventario"""
-    # Agregar tipo de categoría
-    nuevo_producto['Tipo'] = obtener_tipo_categoria(nuevo_producto['Categoria'])
     st.session_state.inventario.append(nuevo_producto)
     guardar_inventario()
     return True
@@ -204,7 +178,6 @@ def editar_producto(producto_id, datos_actualizados):
             datos_actualizados['Ventas'] = ventas_actuales
             datos_actualizados['Stock'] = nuevo_stock
             datos_actualizados['ID'] = producto_id
-            datos_actualizados['Tipo'] = obtener_tipo_categoria(datos_actualizados['Categoria'])
             
             st.session_state.inventario[i] = datos_actualizados
             guardar_inventario()
@@ -213,10 +186,9 @@ def editar_producto(producto_id, datos_actualizados):
     return False, "Producto no encontrado"
 
 def eliminar_producto(producto_id):
-    """Eliminar un producto del inventario - MODIFICADO: ahora permite eliminar con ventas"""
+    """Eliminar un producto del inventario - permite con ventas"""
     for i, item in enumerate(st.session_state.inventario):
         if item['ID'] == producto_id:
-            # MODIFICACIÓN: Ya no verificamos si tiene ventas
             # Guardamos información antes de eliminar
             producto_eliminado = st.session_state.inventario.pop(i)
             
@@ -251,26 +223,8 @@ def calcular_caja_total():
         total += item['Ventas'] * item['Precio']
     return total
 
-def obtener_ventas_por_periodo(dias=30):
-    """Obtener ventas de los últimos N días"""
-    if not st.session_state.ventas_diarias:
-        return []
-    
-    fecha_limite = datetime.now() - timedelta(days=dias)
-    ventas_recientes = []
-    
-    for venta in st.session_state.ventas_diarias:
-        try:
-            fecha_venta = datetime.fromisoformat(venta['fecha'])
-            if fecha_venta >= fecha_limite:
-                ventas_recientes.append(venta)
-        except:
-            continue
-    
-    return ventas_recientes
-
 # ============================================
-# INTERFAZ PRINCIPAL
+# INTERFAZ PRINCIPAL - SIMPLIFICADA
 # ============================================
 def main():
     st.title("👔 Inventario Ropa de Caballero")
@@ -278,32 +232,20 @@ def main():
     # Cargar todos los datos
     cargar_datos()
     
-    # Información de tallas
-    with st.expander("ℹ️ Guía de Tallas y Categorías", expanded=False):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.markdown("### 🔝 Parte Superior")
-            st.write("**Categorías:** Camisas, Playeras, Suéteres, Chaquetas, Camisetas, Polos")
-            st.write("**Tallas:** Unitalla, XCH, CH, M, G, XG, XXG")
-        with col2:
-            st.markdown("### 👖 Parte Inferior")
-            st.write("**Categorías:** Pantalones, Shorts, Jeans, Bermudas")
-            st.write("**Tallas:** Unitalla, 28, 30, 32, 34, 36, 38, 40, 42")
-        with col3:
-            st.markdown("### 🎽 Accesorios")
-            st.write("**Categorías:** Cinturones, Gorras, Medias, Bufandas")
-            st.write("**Talla:** Unitalla (puedes agregar más categorías)")
+    # Información simplificada
+    with st.expander("ℹ️ Información del Sistema", expanded=False):
+        st.write("""
+        **📌 Características:**
+        - **Tallas manuales**: Escribe cualquier talla (28, 30, M, G, Unitalla, etc.)
+        - **Categorías personalizables**: Agrega nuevas categorías cuando las necesites
+        - **Eliminar productos**: Puedes eliminar productos con o sin ventas
+        - **Control de gráficas**: Programa reseteos o hazlo manualmente
+        - **Cálculo automático**: La caja se calcula desde las ventas
+        """)
     
     st.markdown("---")
     
-    # Convertir a DataFrame y asegurar columnas
-    inventario_con_tipo = []
-    for item in st.session_state.inventario:
-        if 'Tipo' not in item:
-            item['Tipo'] = obtener_tipo_categoria(item.get('Categoria', ''))
-        inventario_con_tipo.append(item)
-    
-    st.session_state.inventario = inventario_con_tipo
+    # Convertir a DataFrame
     df = pd.DataFrame(st.session_state.inventario)
     
     # Pestañas
@@ -316,16 +258,13 @@ def main():
         if df.empty:
             st.info("📭 No hay productos en el inventario. Ve a 'Gestión Inventario' para agregar productos.")
         else:
-            # Filtros
-            col_filt1, col_filt2, col_filt3 = st.columns(3)
+            # Filtros simples
+            col_filt1, col_filt2 = st.columns([2, 1])
             with col_filt1:
                 todas_categorias = obtener_todas_categorias()
                 categoria_filtro = st.selectbox("Filtrar por categoría:", 
                                               ['Todas'] + sorted(todas_categorias))
             with col_filt2:
-                filtrar_tipo = st.selectbox("Filtrar por tipo:", 
-                                          ['Todos', 'Parte Superior', 'Parte Inferior', 'Accesorios', 'Personalizado'])
-            with col_filt3:
                 search_term = st.text_input("🔍 Buscar producto:", "", key="search_ventas")
             
             # Aplicar filtros
@@ -334,16 +273,6 @@ def main():
             if not df.empty:
                 if categoria_filtro != 'Todas':
                     filtered_df = filtered_df[filtered_df['Categoria'] == categoria_filtro]
-                
-                if filtrar_tipo != 'Todos':
-                    tipo_map = {
-                        'Parte Superior': 'superior',
-                        'Parte Inferior': 'inferior', 
-                        'Accesorios': 'accesorios',
-                        'Personalizado': 'personalizado'
-                    }
-                    if filtrar_tipo in tipo_map:
-                        filtered_df = filtered_df[filtered_df['Tipo'] == tipo_map[filtrar_tipo]]
                 
                 if search_term:
                     filtered_df = filtered_df[
@@ -358,55 +287,18 @@ def main():
             else:
                 st.write(f"**📊 {len(filtered_df)} productos encontrados**")
                 
-                # Verificar si tiene columna 'Tipo'
-                if 'Tipo' in filtered_df.columns:
-                    tipos = filtered_df['Tipo'].unique()
+                # Mostrar productos en columnas
+                num_productos = len(filtered_df)
+                if num_productos == 0:
+                    st.info("No hay productos para mostrar.")
                 else:
-                    tipos = filtered_df['Categoria'].unique()
-                
-                for tipo in tipos:
-                    if 'Tipo' in filtered_df.columns:
-                        productos_tipo = filtered_df[filtered_df['Tipo'] == tipo]
-                    else:
-                        productos_tipo = filtered_df[filtered_df['Categoria'] == tipo]
-                    
-                    # Título según tipo
-                    titulo_map = {
-                        'superior': '🔝 Parte Superior',
-                        'inferior': '👖 Parte Inferior',
-                        'accesorios': '🎽 Accesorios',
-                        'personalizado': '📌 Categorías Personalizadas'
-                    }
-                    
-                    if tipo in titulo_map:
-                        st.markdown(f"### {titulo_map[tipo]}")
-                    else:
-                        st.markdown(f"### 📦 {tipo}")
-                    
-                    # Mostrar en columnas
-                    num_productos = len(productos_tipo)
-                    if num_productos == 0:
-                        continue
-                    
                     num_cols = min(3, num_productos)
                     cols = st.columns(num_cols)
                     
-                    for idx, (_, row) in enumerate(productos_tipo.iterrows()):
+                    for idx, (_, row) in enumerate(filtered_df.iterrows()):
                         with cols[idx % num_cols]:
                             with st.container(border=True):
-                                # Icono según tipo
-                                if 'Tipo' in row:
-                                    icono_map = {
-                                        'superior': '👕',
-                                        'inferior': '👖',
-                                        'accesorios': '🧦',
-                                        'personalizado': '📌'
-                                    }
-                                    icono = icono_map.get(row['Tipo'], '📦')
-                                else:
-                                    icono = '📦'
-                                
-                                st.markdown(f"### {icono} {row['Producto']}")
+                                st.markdown(f"### {row['Producto']}")
                                 st.markdown(f"**Categoría:** {row['Categoria']}")
                                 st.markdown(f"**Talla:** {row['Talla']} | **Color:** {row['Color']}")
                                 st.markdown(f"**Precio:** ${row['Precio']:,.2f}")
@@ -438,24 +330,24 @@ def main():
         st.header("📊 Reporte y Caja")
         
         # Sección para resetear gráficas
-        with st.expander("🔄 Configurar Reseteo de Gráficas", expanded=False):
+        with st.expander("🔄 Control de Gráficas", expanded=False):
             col_res1, col_res2 = st.columns(2)
             with col_res1:
                 nueva_fecha_reset = st.date_input(
-                    "Fecha para resetear gráficas:",
+                    "Próximo reset de gráficas:",
                     value=datetime.strptime(st.session_state.reset_graficas_fecha, '%Y-%m-%d') if 'reset_graficas_fecha' in st.session_state else datetime.now(),
                     key="fecha_reset"
                 )
             
             with col_res2:
-                if st.button("💾 Guardar Fecha de Reset", use_container_width=True):
+                if st.button("💾 Guardar Fecha", use_container_width=True):
                     st.session_state.reset_graficas_fecha = nueva_fecha_reset.strftime('%Y-%m-%d')
-                    st.success(f"Fecha de reset guardada: {nueva_fecha_reset.strftime('%Y-%m-%d')}")
+                    st.success(f"Fecha guardada: {nueva_fecha_reset.strftime('%Y-%m-%d')}")
                 
                 if st.button("🔄 Resetear Gráficas Ahora", use_container_width=True, type="secondary"):
                     st.session_state.ventas_diarias = []
                     guardar_inventario()
-                    st.success("¡Gráficas reseteadas! Todas las ventas diarias han sido limpiadas.")
+                    st.success("¡Gráficas reseteadas!")
                     st.rerun()
         
         if df.empty:
@@ -468,12 +360,10 @@ def main():
                 df['Stock'] = 0
             if 'Precio' not in df.columns:
                 df['Precio'] = 0.0
-            if 'Tipo' not in df.columns:
-                df['Tipo'] = df['Categoria'].apply(obtener_tipo_categoria)
             
-            # CORRECCIÓN: Calcular caja total correctamente
+            # Calcular caja total
             caja_total = calcular_caja_total()
-            st.session_state.caja = caja_total  # Actualizar estado
+            st.session_state.caja = caja_total
             
             # Métricas principales
             col1, col2, col3, col4 = st.columns(4)
@@ -495,120 +385,54 @@ def main():
             
             st.markdown("---")
             
-            # Estadísticas por tipo
-            if 'Tipo' in df.columns:
-                st.subheader("📈 Estadísticas por Tipo de Prenda")
-                
-                tipo_map_display = {
-                    'superior': '🔝 Parte Superior',
-                    'inferior': '👖 Parte Inferior',
-                    'accesorios': '🎽 Accesorios',
-                    'personalizado': '📌 Personalizado'
-                }
-                
-                tipos_presentes = df['Tipo'].unique()
-                if len(tipos_presentes) > 0:
-                    cols_tipos = st.columns(len(tipos_presentes))
-                    
-                    for idx, tipo in enumerate(tipos_presentes):
-                        with cols_tipos[idx]:
-                            ventas_tipo = df[df['Tipo'] == tipo]['Ventas'].sum()
-                            display_name = tipo_map_display.get(tipo, tipo)
-                            st.metric(display_name, f"{int(ventas_tipo)} ventas")
-            
-            st.markdown("---")
-            
-            # Gráficos - MODIFICADO: Sin Top 10, mejor distribución
+            # Gráficos
             col1, col2 = st.columns(2)
             
             with col1:
-                if not df.empty and 'Tipo' in df.columns:
-                    ventas_por_tipo = df.groupby('Tipo')['Ventas'].sum().reset_index()
-                    if not ventas_por_tipo.empty and len(ventas_por_tipo) > 0:
-                        ventas_por_tipo['Tipo'] = ventas_por_tipo['Tipo'].map(tipo_map_display)
-                        ventas_por_tipo = ventas_por_tipo.dropna()
-                        
-                        if not ventas_por_tipo.empty:
-                            fig = px.pie(
-                                ventas_por_tipo, 
-                                values='Ventas', 
-                                names='Tipo',
-                                title="📊 Distribución de Ventas por Tipo",
-                                color_discrete_sequence=px.colors.qualitative.Set3,
-                                hole=0.3
-                            )
-                            fig.update_traces(textposition='inside', textinfo='percent+label+value')
-                            st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
                 if not df.empty and 'Categoria' in df.columns:
-                    # Distribución por categoría (todas las categorías)
                     ventas_por_categoria = df.groupby('Categoria')['Ventas'].sum().reset_index()
                     if not ventas_por_categoria.empty:
-                        fig = px.bar(
-                            ventas_por_categoria,
-                            x='Categoria',
-                            y='Ventas',
-                            title="📈 Ventas por Categoría",
-                            color='Categoria',
-                            text='Ventas',
-                            color_discrete_sequence=px.colors.qualitative.Pastel
+                        fig = px.pie(
+                            ventas_por_categoria, 
+                            values='Ventas', 
+                            names='Categoria',
+                            title="📊 Ventas por Categoría",
+                            color_discrete_sequence=px.colors.qualitative.Set3
                         )
-                        fig.update_traces(textposition='outside')
-                        fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                        fig.update_traces(textposition='inside', textinfo='percent+label')
                         st.plotly_chart(fig, use_container_width=True)
             
-            # Gráfico adicional: Ventas por talla
-            st.markdown("---")
-            st.subheader("📏 Ventas por Talla")
-            
-            if not df.empty and 'Talla' in df.columns:
-                ventas_por_talla = df.groupby('Talla')['Ventas'].sum().reset_index()
-                if not ventas_por_talla.empty:
-                    fig = px.bar(
-                        ventas_por_talla,
-                        x='Talla',
-                        y='Ventas',
-                        title="Ventas por Talla",
-                        color='Talla',
-                        text='Ventas',
-                        color_discrete_sequence=px.colors.sequential.Viridis
-                    )
-                    fig.update_traces(textposition='outside')
-                    fig.update_layout(showlegend=False)
-                    st.plotly_chart(fig, use_container_width=True)
+            with col2:
+                if not df.empty and 'Talla' in df.columns:
+                    ventas_por_talla = df.groupby('Talla')['Ventas'].sum().reset_index()
+                    if not ventas_por_talla.empty:
+                        fig = px.bar(
+                            ventas_por_talla,
+                            x='Talla',
+                            y='Ventas',
+                            title="📏 Ventas por Talla",
+                            color='Talla',
+                            text='Ventas'
+                        )
+                        fig.update_traces(textposition='outside')
+                        st.plotly_chart(fig, use_container_width=True)
             
             st.markdown("---")
             
             # Tabla completa
             st.subheader("📋 Inventario Completo")
             
-            # Filtros para la tabla
-            col_f1, col_f2, col_f3 = st.columns(3)
+            # Filtros simples
+            col_f1, col_f2 = st.columns(2)
             with col_f1:
-                opciones_tipo = ['Todos']
-                if 'Tipo' in df.columns:
-                    tipos_unicos = sorted(df['Tipo'].unique())
-                    for t in tipos_unicos:
-                        display_name = tipo_map_display.get(t, t)
-                        opciones_tipo.append(display_name)
-                
-                filtro_tipo_tabla = st.selectbox("Tipo:", opciones_tipo, key="filtro_tipo_tabla")
+                todas_categorias_tabla = ['Todas'] + sorted(df['Categoria'].unique().tolist())
+                filtro_categoria = st.selectbox("Filtrar categoría:", todas_categorias_tabla, key="filtro_categoria")
             
             with col_f2:
-                todas_categorias_tabla = ['Todas'] + sorted(df['Categoria'].unique().tolist())
-                filtro_categoria = st.selectbox("Categoría:", todas_categorias_tabla, key="filtro_categoria")
-            
-            with col_f3:
                 ordenar_por = st.selectbox("Ordenar por:", ['Producto', 'Stock', 'Ventas', 'Precio'], key="ordenar_por")
             
             # Aplicar filtros
             display_df = df.copy()
-            
-            if filtro_tipo_tabla != 'Todos' and 'Tipo' in display_df.columns:
-                tipo_reverse_map = {v: k for k, v in tipo_map_display.items()}
-                tipo_filtro = tipo_reverse_map.get(filtro_tipo_tabla, filtro_tipo_tabla)
-                display_df = display_df[display_df['Tipo'] == tipo_filtro]
             
             if filtro_categoria != 'Todas':
                 display_df = display_df[display_df['Categoria'] == filtro_categoria]
@@ -628,20 +452,11 @@ def main():
                 display_df_formatted = display_df.copy()
                 display_df_formatted['Precio'] = display_df_formatted['Precio'].apply(lambda x: f"${x:,.2f}")
                 
-                if 'Tipo' in display_df_formatted.columns:
-                    display_df_formatted['Tipo'] = display_df_formatted['Tipo'].map(tipo_map_display)
-                
-                columnas_disponibles = []
-                for col in ['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']:
-                    if col in display_df_formatted.columns:
-                        columnas_disponibles.append(col)
-                
                 st.dataframe(
-                    display_df_formatted[columnas_disponibles],
+                    display_df_formatted[['Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']],
                     use_container_width=True,
                     hide_index=True,
                     column_config={
-                        'Tipo': st.column_config.TextColumn("Tipo"),
                         'Categoria': st.column_config.TextColumn("Categoría"),
                         'Producto': st.column_config.TextColumn("Producto"),
                         'Talla': st.column_config.TextColumn("Talla"),
@@ -652,12 +467,12 @@ def main():
                     }
                 )
             else:
-                st.info("No hay productos que coincidan con los filtros seleccionados.")
+                st.info("No hay productos que coincidan con los filtros.")
             
             # Botones de exportación
             col_exp1, col_exp2 = st.columns(2)
             with col_exp1:
-                if st.button("📥 Exportar a CSV", use_container_width=True, key="export_csv"):
+                if st.button("📥 Exportar CSV", use_container_width=True, key="export_csv"):
                     csv = df.to_csv(index=False, encoding='utf-8-sig')
                     st.download_button(
                         label="Descargar CSV",
@@ -671,7 +486,6 @@ def main():
             with col_exp2:
                 if st.button("🔄 Reiniciar Caja", use_container_width=True, key="reset_caja"):
                     st.session_state.caja = 0.0
-                    # También reiniciamos ventas de productos
                     for item in st.session_state.inventario:
                         item['Ventas'] = 0
                         item['Stock'] = item['Entrada']
@@ -724,7 +538,7 @@ def main():
             
             # PANEL DE GESTIÓN DE CATEGORÍAS
             if st.session_state.mostrar_gestion_categorias:
-                st.subheader("🏷️ Gestión de Categorías Personalizadas")
+                st.subheader("🏷️ Gestión de Categorías")
                 
                 col_info1, col_info2 = st.columns(2)
                 with col_info1:
@@ -732,9 +546,9 @@ def main():
                         st.markdown("### 📋 Categorías Existentes")
                         todas_categorias = obtener_todas_categorias()
                         
-                        st.write("**Categorías base (no editables):**")
-                        for tipo in ['superior', 'inferior', 'accesorios']:
-                            st.write(f"- **{tipo.title()}:** {', '.join(CATEGORIAS_BASE[tipo])}")
+                        st.write("**Categorías base:**")
+                        for cat in CATEGORIAS_BASE:
+                            st.write(f"- {cat}")
                         
                         if st.session_state.categorias_personalizadas:
                             st.write("\n**Categorías personalizadas:**")
@@ -753,12 +567,12 @@ def main():
                         if st.button("➕ Agregar Categoría", use_container_width=True):
                             if nueva_categoria:
                                 if agregar_categoria_personalizada(nueva_categoria):
-                                    st.success(f"✅ Categoría '{nueva_categoria}' agregada exitosamente!")
+                                    st.success(f"✅ Categoría '{nueva_categoria}' agregada!")
                                     st.rerun()
                                 else:
                                     st.error(f"❌ La categoría '{nueva_categoria}' ya existe.")
                             else:
-                                st.error("❌ Por favor ingresa un nombre para la categoría.")
+                                st.error("❌ Ingresa un nombre para la categoría.")
                         
                         st.markdown("---")
                         
@@ -819,7 +633,7 @@ def main():
                 
                 st.markdown("---")
                 
-                # MODO: AGREGAR PRODUCTO
+                # MODO: AGREGAR PRODUCTO - SIMPLIFICADO
                 if st.session_state.modo_edicion == 'agregar':
                     st.subheader("📝 Agregar Nuevo Producto")
                     
@@ -827,7 +641,6 @@ def main():
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            # Obtener todas las categorías disponibles
                             todas_categorias = obtener_todas_categorias()
                             
                             categoria = st.selectbox(
@@ -841,36 +654,24 @@ def main():
                             color = st.text_input("Color:", key="color_agregar")
                         
                         with col2:
-                            # Obtener tallas según categoría seleccionada - FIX para Jeans y Pantalones
-                            tallas_disponibles = obtener_tallas_disponibles(categoria)
-                            
-                            # Asegurar que Jeans y Pantalones muestren tallas numéricas
-                            if categoria in ['Jeans', 'Pantalones', 'Bermudas']:
-                                tallas_disponibles = ['Unitalla', '28', '30', '32', '34', '36', '38', '40', '42']
-                            
-                            talla = st.selectbox("Talla:", tallas_disponibles, key="talla_agregar")
+                            # CAMBIO IMPORTANTE: Talla como texto manual
+                            talla = st.text_input("Talla (escribe cualquier talla):", 
+                                                placeholder="Ej: M, 32, Unitalla, G, 28...",
+                                                key="talla_agregar")
                             
                             cantidad = st.number_input("Cantidad inicial:", min_value=1, value=1, step=1, key="cant_agregar")
                             
                             precio = st.number_input("Precio ($):", min_value=0.0, value=0.0, step=0.01, 
                                                    format="%.2f", key="precio_agregar")
                         
-                        # Información de tipo de talla
-                        tipo_cat = obtener_tipo_categoria(categoria)
-                        if tipo_cat == 'superior':
-                            st.info("🔝 **Parte Superior**: Unitalla, XCH, CH, M, G, XG, XXG")
-                        elif tipo_cat == 'inferior' or categoria in ['Jeans', 'Pantalones', 'Bermudas']:
-                            st.info("👖 **Parte Inferior**: Unitalla, 28, 30, 32, 34, 36, 38, 40, 42")
-                        elif tipo_cat == 'accesorios':
-                            st.info("🎽 **Accesorio**: Unitalla")
-                        else:
-                            st.info("📌 **Categoría Personalizada**: Unitalla (talla única)")
+                        # Información
+                        st.info("💡 **Nota:** Puedes escribir cualquier talla (números, letras, Unitalla, etc.)")
                         
                         # Botón de envío
                         submitted = st.form_submit_button("➕ Agregar al Inventario", type="primary", use_container_width=True)
                         
                         if submitted:
-                            if not producto or not color:
+                            if not producto or not color or not talla:
                                 st.error("❌ Por favor, completa todos los campos obligatorios")
                             else:
                                 # Crear nuevo producto
@@ -885,17 +686,16 @@ def main():
                                     'Entrada': cantidad,
                                     'Ventas': 0,
                                     'Stock': cantidad,
-                                    'Precio': float(precio),
-                                    'Tipo': tipo_cat
+                                    'Precio': float(precio)
                                 }
                                 
                                 # Agregar al inventario
                                 if agregar_producto(nuevo_producto):
-                                    st.success(f"✅ **{producto}** agregado al inventario exitosamente!")
+                                    st.success(f"✅ **{producto}** agregado exitosamente!")
                                     st.balloons()
                                     st.session_state.modo_edicion = None
                 
-                # MODO: EDITAR PRODUCTO
+                # MODO: EDITAR PRODUCTO - SIMPLIFICADO
                 elif st.session_state.modo_edicion == 'editar':
                     st.subheader("✏️ Editar Producto Existente")
                     
@@ -943,22 +743,10 @@ def main():
                                                                   key="color_editar")
                                     
                                     with col2:
-                                        # Obtener tallas según nueva categoría
-                                        tallas_disponibles = obtener_tallas_disponibles(nueva_categoria)
-                                        
-                                        # FIX para Jeans y Pantalones
-                                        if nueva_categoria in ['Jeans', 'Pantalones', 'Bermudas']:
-                                            tallas_disponibles = ['Unitalla', '28', '30', '32', '34', '36', '38', '40', '42']
-                                        
-                                        # Encontrar índice de la talla actual
-                                        try:
-                                            idx_talla = tallas_disponibles.index(producto_data['Talla'])
-                                        except ValueError:
-                                            idx_talla = 0
-                                        
-                                        nueva_talla = st.selectbox("Talla:", tallas_disponibles, 
-                                                                 index=idx_talla,
-                                                                 key="talla_editar")
+                                        # CAMBIO IMPORTANTE: Talla como texto manual
+                                        nueva_talla = st.text_input("Talla:", 
+                                                                  value=producto_data['Talla'],
+                                                                  key="talla_editar")
                                         
                                         nueva_cantidad = st.number_input("Cantidad total:", 
                                                                         min_value=1, 
@@ -972,16 +760,6 @@ def main():
                                                                      step=0.01,
                                                                      format="%.2f",
                                                                      key="precio_editar")
-                                    
-                                    # Mostrar información del tipo
-                                    nuevo_tipo = obtener_tipo_categoria(nueva_categoria)
-                                    tipo_info = {
-                                        'superior': '🔝 Parte Superior',
-                                        'inferior': '👖 Parte Inferior',
-                                        'accesorios': '🎽 Accesorio',
-                                        'personalizado': '📌 Personalizado'
-                                    }
-                                    st.info(f"{tipo_info.get(nuevo_tipo, '📦')}: {', '.join(obtener_tallas_disponibles(nueva_categoria))}")
                                     
                                     st.info(f"📝 Ventas actuales: {producto_data['Ventas']} | Stock actual: {producto_data['Stock']}")
                                     
@@ -1023,14 +801,14 @@ def main():
                                         else:
                                             st.error(message)
                 
-                # MODO: ELIMINAR PRODUCTO - MODIFICADO: permite eliminar con ventas
+                # MODO: ELIMINAR PRODUCTO
                 elif st.session_state.modo_edicion == 'eliminar':
                     st.subheader("🗑️ Eliminar Producto")
                     
                     if df.empty:
                         st.info("No hay productos para eliminar.")
                     else:
-                        # MODIFICACIÓN: Mostrar TODOS los productos, no solo sin ventas
+                        # Mostrar TODOS los productos
                         productos_eliminar = {f"{row['Producto']} ({row['Talla']}, {row['Color']}) - Ventas: {row['Ventas']}": row['ID'] 
                                             for _, row in df.iterrows()}
                         
@@ -1053,17 +831,9 @@ def main():
                                     st.error(f"⚠️ **ADVERTENCIA:** Este producto tiene {producto_data['Ventas']} ventas registradas.")
                                     st.error(f"Se restarán ${producto_data['Ventas'] * producto_data['Precio']:,.2f} de la caja total.")
                                 
-                                tipo_icono = {
-                                    'superior': '🔝',
-                                    'inferior': '👖',
-                                    'accesorios': '🎽',
-                                    'personalizado': '📌'
-                                }
-                                
                                 col_info1, col_info2 = st.columns(2)
                                 with col_info1:
-                                    tipo = producto_data.get('Tipo', 'desconocido')
-                                    st.write(f"**{tipo_icono.get(tipo, '📦')} Tipo:** {producto_data['Categoria']}")
+                                    st.write(f"**Categoría:** {producto_data['Categoria']}")
                                     st.write(f"**Talla:** {producto_data['Talla']}")
                                 with col_info2:
                                     st.write(f"**Color:** {producto_data['Color']}")
@@ -1105,7 +875,7 @@ def main():
                             productos_con_stock = len(df[df['Stock'] > 0])
                             st.metric("📈 Productos con Stock", f"{productos_con_stock}")
                         
-                        # Búsqueda en inventario
+                        # Búsqueda
                         search_inv = st.text_input("🔍 Buscar en inventario:", key="search_inv")
                         
                         if search_inv:
@@ -1120,30 +890,14 @@ def main():
                         
                         # Mostrar tabla
                         if not filtered_inv.empty:
-                            tipo_map_display_inv = {
-                                'superior': '🔝 Superior',
-                                'inferior': '👖 Inferior', 
-                                'accesorios': '🎽 Accesorio',
-                                'personalizado': '📌 Personalizado'
-                            }
-                            
                             display_inv = filtered_inv.copy()
                             display_inv['Precio'] = display_inv['Precio'].apply(lambda x: f"${x:,.2f}")
                             
-                            if 'Tipo' in display_inv.columns:
-                                display_inv['Tipo'] = display_inv['Tipo'].map(tipo_map_display_inv)
-                            
-                            columnas_mostrar = []
-                            for col in ['Tipo', 'Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']:
-                                if col in display_inv.columns:
-                                    columnas_mostrar.append(col)
-                            
                             st.dataframe(
-                                display_inv[columnas_mostrar],
+                                display_inv[['Categoria', 'Producto', 'Talla', 'Color', 'Stock', 'Ventas', 'Precio']],
                                 use_container_width=True,
                                 hide_index=True,
                                 column_config={
-                                    'Tipo': st.column_config.TextColumn("Tipo"),
                                     'Categoria': st.column_config.TextColumn("Categoría"),
                                     'Producto': st.column_config.TextColumn("Producto"),
                                     'Talla': st.column_config.TextColumn("Talla"),
