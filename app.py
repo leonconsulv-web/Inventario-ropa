@@ -9,7 +9,7 @@ import os
 # CONFIGURACIÓN
 # ============================================
 st.set_page_config(
-    page_title="Inventario Ropa Caballero",
+    page_title="Inventario roPacheco",
     page_icon="👔",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -27,9 +27,8 @@ if 'reset_graficas_fecha' not in st.session_state:
 
 # Categorías base
 CATEGORIAS_BASE = [
-    'Camisas', 'Playeras', 'Suéteres', 'Chaquetas', 'Camisetas', 'Polos',
-    'Pantalones', 'Shorts', 'Jeans', 'Bermudas',
-    'Cinturones', 'Gorras', 'Medias', 'Bufandas'
+    'Camisas', 'Playeras', 'Suéteres', 'Chamarras',
+    'Pantalones', 'Shorts', 'Jeans', 'Niño'
 ]
 
 # Obtener todas las categorías disponibles
