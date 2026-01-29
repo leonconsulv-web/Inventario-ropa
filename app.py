@@ -15,64 +15,37 @@ st.set_page_config(
 )
 
 # Clase personalizada para conexión a Google Sheets
-class GSheetsConnection(ExperimentalBaseConnection):
+class GSheetsConnection(st.connections.BaseConnection): # Cambio a BaseConnection
     def _connect(self, **kwargs):
         import gspread
         from oauth2client.service_account import ServiceAccountCredentials
-        
-        # Configurar scope
-        scope = ['https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive']
-        
-        # Cargar credenciales
+        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds_dict = st.secrets["gcp_service_account"]
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        
-        client = gspread.authorize(creds)
-        return client
+        return gspread.authorize(creds)
     
-    def get_data(self, spreadsheet_url, worksheet_name="Inventario", **kwargs):
-        @cache_data(ttl=300)
-        def _get_data(spreadsheet_url, worksheet_name):
-            client = self._connect()
-            spreadsheet = client.open_by_url(spreadsheet_url)
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            
-            # Obtener todos los registros
-            data = worksheet.get_all_records()
-            
-            if not data:
-                return pd.DataFrame(columns=['ID', 'Categoria', 'Producto', 'Talla', 
-                                           'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'])
-            
-            df = pd.DataFrame(data)
-            
-            # Asegurar tipos de datos correctos
-            numeric_columns = ['Entrada', 'Ventas', 'Stock', 'Precio']
-            for col in numeric_columns:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
-            return df
-        
-        return _get_data(spreadsheet_url, worksheet_name)
-    
+    def get_data(self, spreadsheet_url, worksheet_name="Inventario"):
+        client = self._connect()
+        spreadsheet = client.open_by_url(spreadsheet_url)
+        worksheet = spreadsheet.worksheet(worksheet_name)
+        data = worksheet.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=['ID', 'Categoria', 'Producto', 'Talla', 'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'])
+        df = pd.DataFrame(data)
+        for col in ['Entrada', 'Ventas', 'Stock', 'Precio']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        return df
+
     def update_data(self, spreadsheet_url, data, worksheet_name="Inventario"):
         client = self._connect()
         spreadsheet = client.open_by_url(spreadsheet_url)
         worksheet = spreadsheet.worksheet(worksheet_name)
-        
-        # Convertir DataFrame a lista de listas
-        if isinstance(data, pd.DataFrame):
-            # Incluir headers
-            values = [data.columns.tolist()] + data.fillna('').values.tolist()  
-        else:
-            values = data
-        
-        # Actualizar toda la hoja
+        # Convertimos a lista de listas y aseguramos que los datos sean compatibles
+        values = [data.columns.tolist()] + data.astype(str).values.tolist()
         worksheet.clear()
-        worksheet.update(values, value_input_option='USER_ENTERED')  
-        
+        # IMPORTANTE: Especificar 'A1' para evitar el error de la imagen
+        worksheet.update('A1', values, value_input_option='USER_ENTERED')
         return True
 
 # Inicializar conexión
