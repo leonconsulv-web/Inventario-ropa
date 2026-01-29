@@ -3,8 +3,14 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import hashlib
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from streamlit.connections import ExperimentalBaseConnection
 from streamlit.runtime.caching import cache_data
+
+# ============================================
+# CONFIGURACIÓN
+# ============================================
 
 # Configuración de la página
 st.set_page_config(
@@ -14,234 +20,264 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Clase personalizada para conexión a Google Sheets
-class GSheetsConnection(st.connections.BaseConnection): # Cambio a BaseConnection
-    def _connect(self, **kwargs):
-        import gspread
-        from oauth2client.service_account import ServiceAccountCredentials
-        scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds_dict = st.secrets["gcp_service_account"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        return gspread.authorize(creds)
-    
-    def get_data(self, spreadsheet_url, worksheet_name="Inventario"):
-        client = self._connect()
-        spreadsheet = client.open_by_url(spreadsheet_url)
-        worksheet = spreadsheet.worksheet(worksheet_name)
-        data = worksheet.get_all_records()
-        if not data:
-            return pd.DataFrame(columns=['ID', 'Categoria', 'Producto', 'Talla', 'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'])
-        df = pd.DataFrame(data)
-        for col in ['Entrada', 'Ventas', 'Stock', 'Precio']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        return df
+# Inicializar estado de sesión
+if 'admin_logged_in' not in st.session_state:
+    st.session_state.admin_logged_in = False
 
+# Clase para conexión a Google Sheets
+class GSheetsConnection(ExperimentalBaseConnection):
+    def _connect(self, **kwargs):
+        try:
+            scope = [
+                'https://spreadsheets.google.com/feeds',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            
+            creds_dict = st.secrets["gcp_service_account"]
+            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+            client = gspread.authorize(creds)
+            return client
+        except Exception as e:
+            st.error(f"Error de conexión Google Sheets: {str(e)}")
+            return None
+    
+    def get_data(self, spreadsheet_url, worksheet_name="Inventario", **kwargs):
+        @cache_data(ttl=300)
+        def _get_data(spreadsheet_url, worksheet_name):
+            try:
+                client = self._connect()
+                if client is None:
+                    return pd.DataFrame(columns=[
+                        'ID', 'Categoria', 'Producto', 'Talla', 
+                        'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'
+                    ])
+                
+                spreadsheet = client.open_by_url(spreadsheet_url)
+                worksheet = spreadsheet.worksheet(worksheet_name)
+                data = worksheet.get_all_records()
+                
+                if not data:
+                    return pd.DataFrame(columns=[
+                        'ID', 'Categoria', 'Producto', 'Talla', 
+                        'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'
+                    ])
+                
+                df = pd.DataFrame(data)
+                
+                # Convertir columnas numéricas
+                numeric_columns = ['Entrada', 'Ventas', 'Stock', 'Precio']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                
+                return df
+            except Exception as e:
+                st.error(f"Error al obtener datos: {str(e)}")
+                return pd.DataFrame(columns=[
+                    'ID', 'Categoria', 'Producto', 'Talla', 
+                    'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'
+                ])
+        
+        return _get_data(spreadsheet_url, worksheet_name)
+    
     def update_data(self, spreadsheet_url, data, worksheet_name="Inventario"):
-        client = self._connect()
-        spreadsheet = client.open_by_url(spreadsheet_url)
-        worksheet = spreadsheet.worksheet(worksheet_name)
-        # Convertimos a lista de listas y aseguramos que los datos sean compatibles
-        values = [data.columns.tolist()] + data.astype(str).values.tolist()
-        worksheet.clear()
-        # IMPORTANTE: Especificar 'A1' para evitar el error de la imagen
-        worksheet.update('A1', values, value_input_option='USER_ENTERED')
-        return True
+        try:
+            client = self._connect()
+            if client is None:
+                return False
+                
+            spreadsheet = client.open_by_url(spreadsheet_url)
+            worksheet = spreadsheet.worksheet(worksheet_name)
+            
+            if isinstance(data, pd.DataFrame):
+                values = [data.columns.tolist()] + data.fillna('').values.tolist()
+            else:
+                values = data
+            
+            worksheet.clear()
+            worksheet.update(values, value_input_option='USER_ENTERED')
+            return True
+        except Exception as e:
+            st.error(f"Error al actualizar: {str(e)}")
+            return False
 
 # Inicializar conexión
 @st.cache_resource
 def init_connection():
     return GSheetsConnection("gsheets")
 
-conn = init_connection()
-
-# URL de la hoja de Google Sheets (configurar en secrets)
-SPREADSHEET_URL = st.secrets["spreadsheet_url"]
-
-# Función para autenticación
+# Funciones de autenticación SIMPLIFICADAS
 def check_password():
-    """Verificar contraseña del administrador"""
-    if 'admin_logged_in' not in st.session_state:
-        st.session_state.admin_logged_in = False
-    
-    if st.session_state.admin_logged_in:
-        return True
-    
-    return False
+    return st.session_state.admin_logged_in
 
-# Función para login
 def login_section():
-    """Sección de login para administrador"""
+    """Sección de login SIMPLIFICADA"""
     st.markdown("### 🔒 Acceso Administrador")
     
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        # CAMBIA ESTA LÍNEA - key única sin conflictos
-        password = st.text_input("Contraseña:", 
-                                type="password", 
-                                key="admin_pass_input_2024")  # ← Key única
+    # Usar un contenedor simple
+    with st.container():
+        password = st.text_input("Contraseña:", type="password", key="password_input")
         
-        login_button = st.button("Ingresar", key="login_btn_2024")
-        
-        if login_button:
-            # Hash de la contraseña ingresada
-            hashed_input = hashlib.sha256(password.encode()).hexdigest()
-            
-            # Obtener hash de secrets
-            stored_hash = st.secrets["michiotaku"]
-
-            st.write(f"DEBUG - Password ingresada: '{password}'")
-            st.write(f"DEBUG - Hash generado: {hashed_input}")
-            st.write(f"DEBUG - Hash almacenado: {stored_hash}")
-            st.write(f"DEBUG - ¿Son iguales?: {hashed_input == stored_hash}")
-            
-            
-            if hashed_input == stored_hash:
+        if st.button("Ingresar", key="login_button", type="primary"):
+            # COMPARACIÓN DIRECTA - SIN HASH POR AHORA
+            if password == "michiotaku":
                 st.session_state.admin_logged_in = True
                 st.success("✅ Acceso concedido")
                 st.rerun()
             else:
-                st.error("❌ Contraseña incorrecta")
+                st.error(f"❌ Contraseña incorrecta. Ingresaste: '{password}'")
     
     return False
 
-# Función principal de la aplicación
+# Función principal
 def main():
     st.title("👔 Inventario Ropa de Caballero")
     st.markdown("---")
     
+    # Inicializar conexión
+    conn = init_connection()
+    
+    # Obtener URL desde secrets
     try:
-        # Cargar datos
-        df = conn.get_data(SPREADSHEET_URL)
+        SPREADSHEET_URL = st.secrets["spreadsheet_url"]
+        WORKSHEET_NAME = "Inventario"
+    except KeyError as e:
+        st.error(f"❌ Error: No se encontró {e} en los Secrets")
+        st.stop()
+    
+    # Cargar datos
+    try:
+        df = conn.get_data(SPREADSHEET_URL, WORKSHEET_NAME)
         
         if df.empty:
-            st.warning("⚠️ La base de datos está vacía. Comienza cargando productos en la pestaña de administración.")
-            # Crear DataFrame vacío con las columnas correctas
-            df = pd.DataFrame(columns=['ID', 'Categoria', 'Producto', 'Talla', 
-                                     'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'])
-        
+            st.info("📭 La base de datos está vacía. Comienza cargando productos.")
     except Exception as e:
-        st.error(f"❌ Error al cargar datos: {str(e)}")
-        df = pd.DataFrame(columns=['ID', 'Categoria', 'Producto', 'Talla', 
-                                 'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'])
+        st.error(f"❌ Error: {str(e)}")
+        df = pd.DataFrame(columns=[
+            'ID', 'Categoria', 'Producto', 'Talla', 
+            'Color', 'Entrada', 'Ventas', 'Stock', 'Precio'
+        ])
     
-    # Crear pestañas
+    # Pestañas
     tab1, tab2, tab3 = st.tabs(["🛍️ Registrar Ventas", "📊 Reporte y Caja", "📦 Cargar Mercancía"])
     
     # TAB 1: REGISTRAR VENTAS
     with tab1:
         st.header("Registrar Ventas")
         
-        # Buscador
-        search_term = st.text_input("🔍 Buscar producto por nombre o modelo:", "")
-        
-        if search_term:
-            filtered_df = df[df['Producto'].str.contains(search_term, case=False, na=False)]
+        if df.empty:
+            st.info("No hay productos en el inventario.")
         else:
-            filtered_df = df
-        
-        if filtered_df.empty:
-            st.info("No se encontraron productos. Intenta con otro término de búsqueda.")
-        else:
-            st.write(f"**{len(filtered_df)} productos encontrados**")
+            search_term = st.text_input("🔍 Buscar producto:", "")
             
-            for _, row in filtered_df.iterrows():
-                with st.expander(f"{row['Producto']} - Talla: {row['Talla']} - Color: {row['Color']}"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.write(f"**Categoría:** {row['Categoria']}")
-                        st.write(f"**Precio:** ${row['Precio']:,.2f}")
-                        st.write(f"**Stock disponible:** {int(row['Stock'])}")
-                    
-                    with col2:
-                        st.write(f"**Ventas totales:** {int(row['Ventas'])}")
-                        st.write(f"**Última entrada:** {int(row['Entrada'])}")
-                    
-                    # Botón para registrar venta
-                    if st.button("✅ Confirmar Venta", key=f"venta_{row['ID']}"):
-                        if row['Stock'] > 0:
-                            try:
-                                # Actualizar DataFrame
-                                idx = df[df['ID'] == row['ID']].index[0]
-                                df.at[idx, 'Ventas'] = int(df.at[idx, 'Ventas']) + 1
-                                df.at[idx, 'Stock'] = int(df.at[idx, 'Stock']) - 1
-                                
-                                # Guardar en Google Sheets
-                                conn.update_data(SPREADSHEET_URL, df)
-                                
-                                st.success(f"✅ Venta registrada: {row['Producto']}")
-                                st.rerun()
-                                
-                            except Exception as e:
-                                st.error(f"❌ Error al registrar venta: {str(e)}")
-                        else:
-                            st.error("❌ Stock insuficiente")
+            if search_term:
+                filtered_df = df[df['Producto'].str.contains(search_term, case=False, na=False)]
+            else:
+                filtered_df = df
+            
+            if filtered_df.empty:
+                st.info("No se encontraron productos.")
+            else:
+                st.write(f"**{len(filtered_df)} productos**")
+                
+                for _, row in filtered_df.iterrows():
+                    with st.expander(f"{row['Producto']} - Talla: {row['Talla']} - Color: {row['Color']}"):
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write(f"**Categoría:** {row['Categoria']}")
+                            st.write(f"**Precio:** ${row['Precio']:,.2f}")
+                            st.write(f"**Stock:** {int(row['Stock'])}")
+                        
+                        with col2:
+                            st.write(f"**Ventas:** {int(row['Ventas'])}")
+                            st.write(f"**Entrada:** {int(row['Entrada'])}")
+                        
+                        if st.button("✅ Vender", key=f"v_{row['ID']}"):
+                            if row['Stock'] > 0:
+                                try:
+                                    idx = df[df['ID'] == row['ID']].index[0]
+                                    df.at[idx, 'Ventas'] += 1
+                                    df.at[idx, 'Stock'] -= 1
+                                    conn.update_data(SPREADSHEET_URL, df, WORKSHEET_NAME)
+                                    st.success("✅ Venta registrada")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+                            else:
+                                st.error("❌ Sin stock")
     
     # TAB 2: REPORTE Y CAJA
     with tab2:
         st.header("Reporte y Caja")
         
-        # Botón para forzar actualización
         col1, col2 = st.columns([3,1])
         with col2:
-            if st.button("🔄 Actualizar Datos", use_container_width=True):
+            if st.button("🔄 Actualizar"):
                 cache_data.clear()
                 st.rerun()
         
         if not df.empty:
-            # Métricas principales
+            # Métricas
             col1, col2, col3 = st.columns(3)
-            
             with col1:
-                total_ventas = df['Ventas'].sum()
-                dinero_caja = (df['Ventas'] * df['Precio']).sum()
-                st.metric("💰 Dinero en Caja", f"${dinero_caja:,.2f}")
-            
+                try:
+                    dinero = (df['Ventas'] * df['Precio']).sum()
+                    st.metric("💰 Caja", f"${dinero:,.2f}")
+                except:
+                    st.metric("💰 Caja", "$0.00")
             with col2:
-                stock_total = df['Stock'].sum()
-                st.metric("📦 Stock Total", f"{int(stock_total)} unidades")
-            
+                try:
+                    stock = df['Stock'].sum()
+                    st.metric("📦 Stock", f"{int(stock)}")
+                except:
+                    st.metric("📦 Stock", "0")
             with col3:
-                productos_unicos = df['Producto'].nunique()
-                st.metric("👔 Productos Únicos", productos_unicos)
+                try:
+                    productos = df['Producto'].nunique()
+                    st.metric("👔 Productos", productos)
+                except:
+                    st.metric("👔 Productos", "0")
             
             # Gráficos
             st.markdown("---")
-            
             col1, col2 = st.columns(2)
-            
             with col1:
-                # Ventas por categoría
-                ventas_categoria = df.groupby('Categoria')['Ventas'].sum().reset_index()
-                if not ventas_categoria.empty:
-                    fig1 = px.pie(ventas_categoria, values='Ventas', names='Categoria',
-                                title="Ventas por Categoría")
-                    st.plotly_chart(fig1, use_container_width=True)
+                try:
+                    ventas_cat = df.groupby('Categoria')['Ventas'].sum().reset_index()
+                    if not ventas_cat.empty:
+                        fig = px.pie(ventas_cat, values='Ventas', names='Categoria', title="Ventas por Categoría")
+                        st.plotly_chart(fig, use_container_width=True)
+                except:
+                    pass
             
             with col2:
-                # Stock por categoría
-                stock_categoria = df.groupby('Categoria')['Stock'].sum().reset_index()
-                if not stock_categoria.empty:
-                    fig2 = px.bar(stock_categoria, x='Categoria', y='Stock',
-                                title="Stock por Categoría", color='Categoria')
-                    st.plotly_chart(fig2, use_container_width=True)
+                try:
+                    stock_cat = df.groupby('Categoria')['Stock'].sum().reset_index()
+                    if not stock_cat.empty:
+                        fig = px.bar(stock_cat, x='Categoria', y='Stock', title="Stock por Categoría", color='Categoria')
+                        st.plotly_chart(fig, use_container_width=True)
+                except:
+                    pass
             
-            # DataFrame completo
-            st.markdown("### 📋 Base de Datos Completa")
+            # Tabla
+            st.markdown("### 📋 Datos Completos")
             st.dataframe(df, use_container_width=True, hide_index=True)
             
-            # Botón para exportar
-            if st.button("📥 Exportar a CSV"):
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="Descargar CSV",
-                    data=csv,
-                    file_name=f"inventario_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+            # Exportar
+            if st.button("📥 Exportar CSV"):
+                try:
+                    csv = df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        "Descargar",
+                        csv,
+                        f"inventario_{datetime.now().strftime('%Y%m%d')}.csv",
+                        "text/csv"
+                    )
+                except:
+                    st.error("Error al exportar")
         else:
-            st.info("No hay datos para mostrar")
+            st.info("No hay datos")
     
     # TAB 3: CARGAR MERCANCÍA
     with tab3:
@@ -250,7 +286,7 @@ def main():
         if not check_password():
             login_section()
         else:
-            st.success("✅ Modo administrador activo")
+            st.success("✅ Modo administrador")
             
             if st.button("🚪 Cerrar Sesión"):
                 st.session_state.admin_logged_in = False
@@ -258,82 +294,63 @@ def main():
             
             st.markdown("---")
             
-            # Formulario de carga
-            with st.form("form_carga"):
+            with st.form("nuevo_producto"):
                 st.subheader("📝 Nuevo Producto")
-                
-                # Generar ID único
                 new_id = f"PROD_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 
                 col1, col2 = st.columns(2)
-                
                 with col1:
-                    # Categoría con opción de nueva
-                    categorias_existentes = sorted(df['Categoria'].unique().tolist()) if not df.empty else []
-                    opciones_categoria = categorias_existentes + ['+ Nueva Categoría']
+                    # Categoría
+                    cats = sorted(df['Categoria'].unique().tolist()) if not df.empty else []
+                    cats.append('+ Nueva Categoría')
+                    cat_sel = st.selectbox("Categoría:", cats, key="cat_sel")
                     
-                    categoria_seleccionada = st.selectbox(
-                        "Categoría:",
-                        options=opciones_categoria,
-                        key="categoria_select"
-                    )
-                    
-                    if categoria_seleccionada == '+ Nueva Categoría':
-                        categoria = st.text_input("Nombre de nueva categoría:", key="nueva_categoria")
+                    if cat_sel == '+ Nueva Categoría':
+                        categoria = st.text_input("Nueva categoría:", key="new_cat")
                     else:
-                        categoria = categoria_seleccionada
+                        categoria = cat_sel
                     
-                    producto = st.text_input("Nombre del Producto:", key="producto")
+                    producto = st.text_input("Producto:", key="prod")
                     color = st.text_input("Color:", key="color")
                 
                 with col2:
-                    # Tallas dinámicas según categoría
-                    if categoria and ('pantalón' in categoria.lower() or 'short' in categoria.lower()):
-                        tallas_opciones = ['28', '30', '32', '34', '36', '38', '40', '42']
+                    # Tallas dinámicas
+                    if categoria and ('pantalón' in str(categoria).lower() or 'short' in str(categoria).lower()):
+                        tallas = ['28', '30', '32', '34', '36', '38', '40', '42']
                     else:
-                        tallas_opciones = ['XCH', 'CH', 'M', 'G', 'XG', 'XXG']
+                        tallas = ['XCH', 'CH', 'M', 'G', 'XG', 'XXG']
                     
-                    talla = st.selectbox("Talla:", options=tallas_opciones, key="talla")
-                    
-                    entrada = st.number_input("Cantidad de Entrada:", min_value=1, value=1, step=1, key="entrada")
-                    precio = st.number_input("Precio Unitario ($):", min_value=0.0, value=0.0, step=0.01, key="precio")
+                    talla = st.selectbox("Talla:", tallas, key="talla")
+                    entrada = st.number_input("Cantidad:", min_value=1, value=1, key="ent")
+                    precio = st.number_input("Precio $:", min_value=0.0, value=0.0, step=0.01, key="precio")
                 
-                # Botón de enviar
-                submitted = st.form_submit_button("➕ Agregar al Inventario", use_container_width=True)
+                submit = st.form_submit_button("➕ Agregar Producto")
                 
-                if submitted:
+                if submit:
                     if not categoria or not producto or not color:
-                        st.error("❌ Por favor completa todos los campos obligatorios")
+                        st.error("❌ Faltan datos")
                     else:
+                        nuevo = {
+                            'ID': new_id,
+                            'Categoria': categoria,
+                            'Producto': producto,
+                            'Talla': talla,
+                            'Color': color,
+                            'Entrada': int(entrada),
+                            'Ventas': 0,
+                            'Stock': int(entrada),
+                            'Precio': float(precio)
+                        }
+                        
                         try:
-                            # Crear nuevo registro
-                            nuevo_registro = {
-                                'ID': new_id,
-                                'Categoria': categoria,
-                                'Producto': producto,
-                                'Talla': talla,
-                                'Color': color,
-                                'Entrada': int(entrada),
-                                'Ventas': 0,
-                                'Stock': int(entrada),
-                                'Precio': float(precio)
-                            }
-                            
-                            # Agregar al DataFrame
-                            nuevo_df = pd.DataFrame([nuevo_registro])
+                            nuevo_df = pd.DataFrame([nuevo])
                             df = pd.concat([df, nuevo_df], ignore_index=True)
-                            
-                            # Guardar en Google Sheets
-                            conn.update_data(SPREADSHEET_URL, df)
-                            
-                            st.success(f"✅ Producto '{producto}' agregado exitosamente!")
-                            st.balloons()
-                            
-                            # Limpiar caché para actualizar datos
+                            conn.update_data(SPREADSHEET_URL, df, WORKSHEET_NAME)
+                            st.success(f"✅ {producto} agregado")
                             cache_data.clear()
-                            
+                            st.rerun()
                         except Exception as e:
-                            st.error(f"❌ Error al guardar: {str(e)}")
+                            st.error(f"Error: {str(e)}")
 
 if __name__ == "__main__":
     main()
