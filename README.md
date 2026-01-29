@@ -1,4 +1,4 @@
-# Inventario Ropa de Caballero 👔
+# Inventario roPacheco 👔
 
 Aplicación de control de inventario para negocio de ropa de caballero.
 
