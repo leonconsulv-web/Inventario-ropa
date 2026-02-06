@@ -64,17 +64,22 @@ CATEGORIAS_FILE = "categorias_data.json"
 # ============================================
 # FUNCIONES DE DATOS - MODIFICADAS
 # ============================================
-def crear_nuevo_producto(producto, talla, color, categoria, entrada_total, precio_sugerido, precio_venta, ubicacion_inicial="Bodega"):
-    """Crear un nuevo producto con la nueva estructura"""
+def crear_nuevo_producto(producto, talla, color, categoria, stock_bodega, stock_exhibido, precio_sugerido, precio_venta):
+    """Crear un nuevo producto especificando stock por ubicación"""
     nuevo_id = f"PROD_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     
-    # Distribuir el stock inicial según ubicación
-    if ubicacion_inicial == "Bodega":
-        stock_bodega = entrada_total
-        stock_exhibido = 0
+    # Calcular totales
+    entrada_total = stock_bodega + stock_exhibido
+    stock_total = entrada_total
+    
+    # Determinar ubicación principal (donde haya más stock)
+    if stock_bodega > stock_exhibido:
+        ubicacion_principal = "Bodega"
+    elif stock_exhibido > stock_bodega:
+        ubicacion_principal = "Exhibido"
     else:
-        stock_bodega = 0
-        stock_exhibido = entrada_total
+        # Si son iguales, poner en Exhibido por defecto
+        ubicacion_principal = "Exhibido"
     
     return {
         'ID': nuevo_id,
@@ -82,11 +87,11 @@ def crear_nuevo_producto(producto, talla, color, categoria, entrada_total, preci
         'Producto': producto,
         'Talla': talla,
         'Color': color,
-        'Ubicacion': ubicacion_inicial,
+        'Ubicacion': ubicacion_principal,
         'Entrada_Total': entrada_total,
         'Stock_Bodega': stock_bodega,
         'Stock_Exhibido': stock_exhibido,
-        'Stock_Total': entrada_total,
+        'Stock_Total': stock_total,
         'Ventas_Total': 0,
         'Precio_Sugerido': float(precio_sugerido),
         'Precio_Venta': float(precio_venta) if precio_venta > 0 else float(precio_sugerido)
@@ -201,8 +206,10 @@ def registrar_venta(producto_id, precio_venta_real=None):
             # Verificar stock disponible según ubicación
             if item['Ubicacion'] == 'Exhibido':
                 stock_disponible = item['Stock_Exhibido']
+                ubicacion_venta = "exhibido"
             else:
                 stock_disponible = item['Stock_Bodega']
+                ubicacion_venta = "bodega"
             
             if stock_disponible > 0:
                 # Actualizar stock según ubicación
@@ -225,7 +232,8 @@ def registrar_venta(producto_id, precio_venta_real=None):
                     'precio_sugerido': item['Precio_Sugerido'],
                     'precio_venta': precio_final,
                     'categoria': item['Categoria'],
-                    'ubicacion': item['Ubicacion']
+                    'ubicacion': item['Ubicacion'],
+                    'ubicacion_venta': ubicacion_venta
                 }
                 st.session_state.ventas_diarias.append(venta)
                 
@@ -233,71 +241,17 @@ def registrar_venta(producto_id, precio_venta_real=None):
                 st.session_state.caja += precio_final
                 
                 guardar_inventario()
-                return True, precio_final
+                return True, precio_final, ubicacion_venta
             else:
-                return False, f"No hay stock disponible en {item['Ubicacion']}"
+                return False, f"No hay stock disponible en {item['Ubicacion']}", None
     
-    return False, "Producto no encontrado"
+    return False, "Producto no encontrado", None
 
 def agregar_producto(nuevo_producto):
     """Agregar nuevo producto al inventario"""
     st.session_state.inventario.append(nuevo_producto)
     guardar_inventario()
     return True
-
-def editar_producto(producto_id, datos_actualizados):
-    """Editar un producto existente"""
-    for i, item in enumerate(st.session_state.inventario):
-        if item['ID'] == producto_id:
-            # Preservar ventas y stocks por ubicación
-            ventas_actuales = item['Ventas_Total']
-            
-            # Calcular nuevo stock total
-            nueva_entrada_total = datos_actualizados['Entrada_Total']
-            
-            # Verificar que el nuevo stock no sea menor a las ventas
-            if nueva_entrada_total < ventas_actuales:
-                return False, f"No puedes reducir la cantidad por debajo de las ventas ({ventas_actuales})"
-            
-            # Calcular nuevo stock total
-            nuevo_stock_total = nueva_entrada_total - ventas_actuales
-            
-            # Distribuir stock manteniendo proporciones actuales
-            stock_bodega_actual = item['Stock_Bodega']
-            stock_exhibido_actual = item['Stock_Exhibido']
-            stock_total_actual = stock_bodega_actual + stock_exhibido_actual
-            
-            if stock_total_actual > 0:
-                # Mantener las proporciones actuales
-                proporcion_bodega = stock_bodega_actual / stock_total_actual
-                proporcion_exhibido = stock_exhibido_actual / stock_total_actual
-                
-                nuevo_stock_bodega = int(nuevo_stock_total * proporcion_bodega)
-                nuevo_stock_exhibido = nuevo_stock_total - nuevo_stock_bodega
-            else:
-                # Si no hay stock, mantener la ubicación actual
-                if item['Ubicacion'] == 'Bodega':
-                    nuevo_stock_bodega = nuevo_stock_total
-                    nuevo_stock_exhibido = 0
-                else:
-                    nuevo_stock_bodega = 0
-                    nuevo_stock_exhibido = nuevo_stock_total
-            
-            # Actualizar todos los datos
-            datos_actualizados['Ventas_Total'] = ventas_actuales
-            datos_actualizados['Stock_Total'] = nuevo_stock_total
-            datos_actualizados['Stock_Bodega'] = nuevo_stock_bodega
-            datos_actualizados['Stock_Exhibido'] = nuevo_stock_exhibido
-            datos_actualizados['ID'] = producto_id
-            datos_actualizados['Ubicacion'] = item['Ubicacion']  # Mantener ubicación
-            datos_actualizados['Precio_Sugerido'] = item['Precio_Sugerido']  # Mantener precio sugerido
-            datos_actualizados['Precio_Venta'] = item['Precio_Venta']  # Mantener precio venta
-            
-            st.session_state.inventario[i] = datos_actualizados
-            guardar_inventario()
-            return True, "Producto actualizado correctamente"
-    
-    return False, "Producto no encontrado"
 
 def eliminar_producto(producto_id):
     """Eliminar un producto del inventario"""
@@ -308,7 +262,6 @@ def eliminar_producto(producto_id):
             
             # Si tenía ventas, restamos de la caja
             if producto_eliminado['Ventas_Total'] > 0:
-                # Necesitamos calcular cuánto se había sumado a la caja
                 # Buscamos todas las ventas de este producto
                 ventas_producto = [v for v in st.session_state.ventas_diarias 
                                   if v.get('producto') == producto_eliminado['Producto']]
@@ -347,9 +300,6 @@ def mover_stock(producto_id, cantidad, origen, destino):
                 item['Ubicacion'] = 'Bodega'
             elif item['Stock_Exhibido'] > item['Stock_Bodega']:
                 item['Ubicacion'] = 'Exhibido'
-            else:
-                # Si hay igual cantidad, mantener ubicación actual
-                pass
             
             guardar_inventario()
             return True, f"{cantidad} unidades movidas de {origen} a {destino}"
@@ -393,17 +343,16 @@ def main():
     # Información del sistema
     with st.expander("ℹ️ Información del Sistema", expanded=False):
         st.write("""
-        **✨ NUEVAS CARACTERÍSTICAS:**
-        - **📦 Stock dividido**: Bodega vs Exhibido
-        - **💰 Dos precios**: Precio sugerido y precio de venta real
-        - **🔄 Mover stock**: Transfiere entre ubicaciones fácilmente
-        - **🎯 Ventas flexibles**: Precio personalizable por venta
+        **✨ CARACTERÍSTICAS PRINCIPALES:**
+        - **📦 Stock por ubicación:** Especifica cuántos van a bodega y cuántos a exhibido
+        - **💰 Doble precio:** Precio sugerido y precio de venta real
+        - **🔄 Mover stock:** Transfiere entre ubicaciones
+        - **🎯 Ventas flexibles:** Precio personalizable por venta
         
-        **📌 Otras características:**
-        - Tallas manuales (escribe cualquier talla)
-        - Categorías personalizables
-        - Eliminar productos con o sin ventas
-        - Control de gráficas programado
+        **📌 Al agregar productos:**
+        1. Especifica cantidad para bodega y exhibido
+        2. La ubicación principal se determina automáticamente
+        3. Puedes mover stock después si es necesario
         """)
     
     st.markdown("---")
@@ -414,7 +363,7 @@ def main():
     # Pestañas
     tab1, tab2, tab3 = st.tabs(["🛍️ Registrar Ventas", "📊 Reporte y Caja", "⚙️ Gestión Inventario"])
     
-    # TAB 1: REGISTRAR VENTAS - MODIFICADA
+    # TAB 1: REGISTRAR VENTAS
     with tab1:
         st.header("Registrar Ventas")
         
@@ -456,19 +405,19 @@ def main():
                 
                 # Mostrar productos
                 for _, row in filtered_df.iterrows():
-                    with st.expander(f"📦 {row['Producto']} | 👕 {row['Talla']} | 🎨 {row['Color']} | 💰${row['Precio_Venta']:,.2f}"):
+                    with st.expander(f"📦 {row['Producto']} | 👕 {row['Talla']} | 🎨 {row['Color']}"):
                         col_info1, col_info2 = st.columns(2)
                         
                         with col_info1:
                             st.write(f"**📋 Categoría:** {row['Categoria']}")
                             st.write(f"**📍 Ubicación:** {row['Ubicacion']}")
-                            st.write(f"**💰 Precio Sugerido:** ${row['Precio_Sugerido']:,.2f}")
-                            st.write(f"**💵 Precio Venta:** ${row['Precio_Venta']:,.2f}")
+                            st.write(f"**💰 Sugerido:** ${row['Precio_Sugerido']:,.2f}")
+                            st.write(f"**💵 Venta:** ${row['Precio_Venta']:,.2f}")
                         
                         with col_info2:
-                            st.write(f"**🛍️ Stock Exhibido:** {int(row['Stock_Exhibido'])}")
-                            st.write(f"**📦 Stock Bodega:** {int(row['Stock_Bodega'])}")
-                            st.write(f"**📊 Stock Total:** {int(row['Stock_Total'])}")
+                            st.write(f"**🛍️ Exhibido:** {int(row['Stock_Exhibido'])}")
+                            st.write(f"**📦 Bodega:** {int(row['Stock_Bodega'])}")
+                            st.write(f"**📊 Total:** {int(row['Stock_Total'])}")
                             st.write(f"**📈 Ventas:** {int(row['Ventas_Total'])}")
                         
                         # Verificar stock disponible según ubicación
@@ -501,16 +450,16 @@ def main():
                                 
                                 with col_precio2:
                                     if st.form_submit_button("✅ Vender 1 Unidad", use_container_width=True, type="primary"):
-                                        success, resultado = registrar_venta(row['ID'], precio_venta)
+                                        success, resultado, ubicacion = registrar_venta(row['ID'], precio_venta)
                                         if success:
-                                            st.success(f"✅ Vendido por ${resultado:,.2f}")
+                                            st.success(f"✅ Vendido por ${resultado:,.2f} (desde {ubicacion})")
                                             st.rerun()
                                         else:
                                             st.error(f"❌ {resultado}")
                         else:
                             st.error(f"❌ Sin stock disponible en {ubicacion_texto}")
     
-    # TAB 2: REPORTE Y CAJA - MODIFICADA
+    # TAB 2: REPORTE Y CAJA
     with tab2:
         st.header("📊 Reporte y Caja")
         
@@ -710,8 +659,7 @@ def main():
                     for item in st.session_state.inventario:
                         item['Ventas_Total'] = 0
                         item['Stock_Total'] = item['Entrada_Total']
-                        item['Stock_Bodega'] = item['Entrada_Total'] if item['Ubicacion'] == 'Bodega' else 0
-                        item['Stock_Exhibido'] = 0 if item['Ubicacion'] == 'Bodega' else item['Entrada_Total']
+                        # Mantener la distribución original de stock
                     guardar_inventario()
                     st.success("Caja y ventas reiniciadas")
                     st.rerun()
@@ -777,7 +725,7 @@ def main():
                     st.info("No hay productos para mover.")
                 else:
                     # Seleccionar producto
-                    productos_opciones = {f"{row['Producto']} ({row['Talla']}, {row['Color']}) - Bodega:{row['Stock_Bodega']} | Exhibido:{row['Stock_Exhibido']}": row['ID'] 
+                    productos_opciones = {f"{row['Producto']} ({row['Talla']}, {row['Color']}) - B:{row['Stock_Bodega']} | E:{row['Stock_Exhibido']}": row['ID'] 
                                         for _, row in df.iterrows()}
                     
                     producto_seleccionado = st.selectbox(
@@ -982,15 +930,12 @@ def main():
                                 
                                 if guardar:
                                     # Actualizar ambos precios
-                                    success1, mensaje1 = actualizar_precio_sugerido(producto_id, nuevo_precio_sugerido)
-                                    success2, mensaje2 = actualizar_precio_venta(producto_id, nuevo_precio_venta)
-                                    
-                                    if success1 and success2:
-                                        st.success("✅ Ambos precios actualizados")
-                                        st.session_state.modo_edicion = None
-                                        st.rerun()
-                                    else:
-                                        st.error(f"Error: {mensaje1 if not success1 else mensaje2}")
+                                    producto_data['Precio_Sugerido'] = float(nuevo_precio_sugerido)
+                                    producto_data['Precio_Venta'] = float(nuevo_precio_venta)
+                                    guardar_inventario()
+                                    st.success("✅ Ambos precios actualizados")
+                                    st.session_state.modo_edicion = None
+                                    st.rerun()
             
             # MODO NORMAL: GESTIÓN DE PRODUCTOS
             else:
@@ -1026,7 +971,7 @@ def main():
                 
                 st.markdown("---")
                 
-                # MODO: AGREGAR PRODUCTO - MODIFICADO
+                # MODO: AGREGAR PRODUCTO - CON ESPECIFICACIÓN DE STOCK
                 if st.session_state.modo_edicion == 'agregar':
                     st.subheader("📝 Agregar Nuevo Producto")
                     
@@ -1037,40 +982,98 @@ def main():
                             todas_categorias = obtener_todas_categorias()
                             
                             categoria = st.selectbox("Categoría:", todas_categorias, key="cat_agregar")
-                            producto = st.text_input("Nombre del Producto:", key="prod_agregar")
-                            color = st.text_input("Color:", key="color_agregar")
-                            ubicacion = st.selectbox("Ubicación inicial:", ["Bodega", "Exhibido"], key="ubicacion_agregar")
+                            producto = st.text_input("Nombre del Producto*:", key="prod_agregar")
+                            color = st.text_input("Color*:", key="color_agregar")
+                            talla = st.text_input("Talla*:", placeholder="M, 32, Unitalla...", key="talla_agregar")
                         
                         with col2:
-                            talla = st.text_input("Talla:", placeholder="M, 32, Unitalla...", key="talla_agregar")
-                            cantidad = st.number_input("Cantidad total:", min_value=1, value=1, step=1, key="cant_agregar")
-                            precio_sugerido = st.number_input("Precio Sugerido ($):", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="precio_sug_agregar")
-                            precio_venta = st.number_input("Precio Venta Inicial ($):", min_value=0.0, value=0.0, step=0.01, format="%.2f", key="precio_venta_agregar")
+                            st.markdown("### 📦 Distribución del Stock")
+                            
+                            col_stock1, col_stock2 = st.columns(2)
+                            with col_stock1:
+                                stock_bodega = st.number_input(
+                                    "Stock en Bodega:",
+                                    min_value=0,
+                                    value=0,
+                                    step=1,
+                                    key="stock_bodega_agregar"
+                                )
+                            
+                            with col_stock2:
+                                stock_exhibido = st.number_input(
+                                    "Stock en Exhibido:",
+                                    min_value=0,
+                                    value=1,
+                                    step=1,
+                                    key="stock_exhibido_agregar"
+                                )
+                            
+                            # Calcular y mostrar total
+                            total_stock = stock_bodega + stock_exhibido
+                            if total_stock == 0:
+                                st.error("⚠️ El stock total debe ser mayor a 0")
+                            else:
+                                # Determinar ubicación principal
+                                ubicacion_principal = "Exhibido" if stock_exhibido > stock_bodega else "Bodega" if stock_bodega > stock_exhibido else "Exhibido (iguales)"
+                                st.info(f"**📊 Stock total:** {total_stock} unidades")
+                                st.info(f"**📍 Ubicación principal:** {ubicacion_principal}")
+                            
+                            st.markdown("### 💰 Precios")
+                            precio_sugerido = st.number_input("Precio Sugerido ($):", 
+                                                            min_value=0.0, 
+                                                            value=0.0, 
+                                                            step=0.01, 
+                                                            format="%.2f", 
+                                                            key="precio_sug_agregar")
+                            
+                            precio_venta = st.number_input("Precio Venta Inicial ($):", 
+                                                         min_value=0.0, 
+                                                         value=0.0, 
+                                                         step=0.01, 
+                                                         format="%.2f", 
+                                                         key="precio_venta_agregar")
+                        
+                        # Indicar campos obligatorios
+                        st.caption("(*) Campos obligatorios")
                         
                         submitted = st.form_submit_button("➕ Agregar al Inventario", type="primary", use_container_width=True)
                         
                         if submitted:
+                            # Validaciones
                             if not producto or not color or not talla:
-                                st.error("❌ Completa todos los campos")
+                                st.error("❌ Completa los campos obligatorios (*)")
+                            elif total_stock == 0:
+                                st.error("❌ El stock total debe ser mayor a 0")
                             else:
                                 nuevo_producto = crear_nuevo_producto(
                                     producto=producto,
                                     talla=talla,
                                     color=color,
                                     categoria=categoria,
-                                    entrada_total=cantidad,
+                                    stock_bodega=stock_bodega,
+                                    stock_exhibido=stock_exhibido,
                                     precio_sugerido=precio_sugerido,
-                                    precio_venta=precio_venta if precio_venta > 0 else precio_sugerido,
-                                    ubicacion_inicial=ubicacion
+                                    precio_venta=precio_venta if precio_venta > 0 else precio_sugerido
                                 )
                                 
                                 if agregar_producto(nuevo_producto):
-                                    st.success(f"✅ {producto} agregado en {ubicacion}")
+                                    ubicacion_principal = "Exhibido" if stock_exhibido > stock_bodega else "Bodega" if stock_bodega > stock_exhibido else "Exhibido"
+                                    st.success(f"✅ {producto} agregado exitosamente!")
+                                    
+                                    # Mostrar resumen
+                                    col_res1, col_res2 = st.columns(2)
+                                    with col_res1:
+                                        st.info(f"📦 **Bodega:** {stock_bodega} unidades")
+                                    with col_res2:
+                                        st.info(f"🛍️ **Exhibido:** {stock_exhibido} unidades")
+                                    
+                                    st.info(f"📍 **Ubicación principal:** {ubicacion_principal}")
+                                    
                                     st.balloons()
                                     st.session_state.modo_edicion = None
                                     st.rerun()
                 
-                # MODO: EDITAR PRODUCTO - MODIFICADO
+                # MODO: EDITAR PRODUCTO - CON ESPECIFICACIÓN DE STOCK
                 elif st.session_state.modo_edicion == 'editar':
                     st.subheader("✏️ Editar Producto Existente")
                     
@@ -1078,7 +1081,7 @@ def main():
                         st.info("No hay productos para editar.")
                     else:
                         # Lista de productos para seleccionar
-                        productos_opciones = {f"{row['Producto']} ({row['Talla']}, {row['Color']}) - Bodega:{row['Stock_Bodega']} | Exhibido:{row['Stock_Exhibido']}": row['ID'] 
+                        productos_opciones = {f"{row['Producto']} ({row['Talla']}, {row['Color']}) - B:{row['Stock_Bodega']} | E:{row['Stock_Exhibido']}": row['ID'] 
                                             for _, row in df.iterrows()}
                         
                         producto_seleccionado = st.selectbox(
@@ -1109,32 +1112,67 @@ def main():
                                             key="cat_editar"
                                         )
                                         
-                                        nuevo_producto = st.text_input("Nombre del Producto:", 
+                                        nuevo_producto = st.text_input("Nombre del Producto*:", 
                                                                       value=producto_data['Producto'],
                                                                       key="prod_editar")
                                         
-                                        nuevo_color = st.text_input("Color:", 
+                                        nuevo_color = st.text_input("Color*:", 
                                                                   value=producto_data['Color'],
                                                                   key="color_editar")
                                         
-                                        nueva_ubicacion = st.selectbox(
-                                            "Ubicación principal:",
-                                            ["Bodega", "Exhibido"],
-                                            index=0 if producto_data['Ubicacion'] == 'Bodega' else 1,
-                                            key="ubicacion_editar"
-                                        )
-                                    
-                                    with col2:
-                                        nueva_talla = st.text_input("Talla:", 
+                                        nueva_talla = st.text_input("Talla*:", 
                                                                   value=producto_data['Talla'],
                                                                   key="talla_editar")
+                                    
+                                    with col2:
+                                        st.markdown("### 📦 Distribución del Stock")
                                         
-                                        nueva_cantidad = st.number_input("Cantidad total:", 
-                                                                        min_value=1, 
-                                                                        value=int(producto_data['Entrada_Total']),
-                                                                        step=1,
-                                                                        key="cant_editar")
+                                        # Calcular total actual
+                                        stock_actual_total = producto_data['Stock_Bodega'] + producto_data['Stock_Exhibido']
+                                        ventas_actuales = producto_data['Ventas_Total']
                                         
+                                        # Nuevos stocks por ubicación
+                                        col_stock1, col_stock2 = st.columns(2)
+                                        with col_stock1:
+                                            nuevo_stock_bodega = st.number_input(
+                                                "Stock en Bodega:",
+                                                min_value=0,
+                                                value=int(producto_data['Stock_Bodega']),
+                                                step=1,
+                                                key="stock_bodega_editar"
+                                            )
+                                        
+                                        with col_stock2:
+                                            nuevo_stock_exhibido = st.number_input(
+                                                "Stock en Exhibido:",
+                                                min_value=0,
+                                                value=int(producto_data['Stock_Exhibido']),
+                                                step=1,
+                                                key="stock_exhibido_editar"
+                                            )
+                                        
+                                        # Calcular nuevo total y verificar
+                                        nuevo_stock_total = nuevo_stock_bodega + nuevo_stock_exhibido
+                                        nueva_entrada_total = nuevo_stock_total + ventas_actuales
+                                        
+                                        # Verificar que el stock no sea menor a las ventas
+                                        if nuevo_stock_total < 0:
+                                            st.error(f"❌ El stock total no puede ser negativo")
+                                        elif nueva_entrada_total < ventas_actuales:
+                                            st.error(f"❌ No puedes reducir la cantidad por debajo de las ventas ({ventas_actuales})")
+                                        else:
+                                            # Determinar nueva ubicación principal
+                                            if nuevo_stock_bodega > nuevo_stock_exhibido:
+                                                nueva_ubicacion = "Bodega"
+                                            elif nuevo_stock_exhibido > nuevo_stock_bodega:
+                                                nueva_ubicacion = "Exhibido"
+                                            else:
+                                                nueva_ubicacion = "Exhibido"  # Por defecto si son iguales
+                                            
+                                            st.info(f"**📊 Nuevo stock total:** {nuevo_stock_total}")
+                                            st.info(f"**📍 Nueva ubicación:** {nueva_ubicacion}")
+                                        
+                                        st.markdown("### 💰 Precios")
                                         nuevo_precio_sugerido = st.number_input("Precio Sugerido ($):", 
                                                                               min_value=0.0, 
                                                                               value=float(producto_data['Precio_Sugerido']),
@@ -1149,8 +1187,19 @@ def main():
                                                                             format="%.2f",
                                                                             key="precio_venta_editar")
                                     
-                                    st.info(f"📝 Ventas: {producto_data['Ventas_Total']} | Stock Total: {producto_data['Stock_Total']}")
-                                    st.info(f"📦 Bodega: {producto_data['Stock_Bodega']} | 🛍️ Exhibido: {producto_data['Stock_Exhibido']}")
+                                    # Información actual
+                                    with st.expander("📊 Información actual", expanded=False):
+                                        col_act1, col_act2 = st.columns(2)
+                                        with col_act1:
+                                            st.write(f"**Ventas totales:** {ventas_actuales}")
+                                            st.write(f"**Entrada total:** {producto_data['Entrada_Total']}")
+                                            st.write(f"**Stock total actual:** {stock_actual_total}")
+                                        with col_act2:
+                                            st.write(f"**Ubicación principal:** {producto_data['Ubicacion']}")
+                                            st.write(f"**Bodega actual:** {producto_data['Stock_Bodega']}")
+                                            st.write(f"**Exhibido actual:** {producto_data['Stock_Exhibido']}")
+                                    
+                                    st.caption("(*) Campos obligatorios")
                                     
                                     # Botones de acción
                                     col_btn1, col_btn2, col_btn3 = st.columns(3)
@@ -1159,50 +1208,57 @@ def main():
                                         guardar = st.form_submit_button("💾 Guardar Cambios", type="primary", use_container_width=True)
                                     
                                     with col_btn2:
-                                        solo_stock = st.form_submit_button("📦 Solo Ajustar Stock", use_container_width=True)
+                                        solo_precios = st.form_submit_button("💰 Solo Cambiar Precios", use_container_width=True)
                                     
                                     with col_btn3:
                                         if st.form_submit_button("❌ Cancelar", use_container_width=True):
                                             st.session_state.modo_edicion = None
                                             st.rerun()
                                     
-                                    if solo_stock:
-                                        success, message = editar_producto(producto_id, {
-                                            'Categoria': producto_data['Categoria'],
-                                            'Producto': producto_data['Producto'],
-                                            'Talla': producto_data['Talla'],
-                                            'Color': producto_data['Color'],
-                                            'Entrada_Total': nueva_cantidad,
-                                            'Precio_Sugerido': producto_data['Precio_Sugerido'],
-                                            'Precio_Venta': producto_data['Precio_Venta'],
-                                            'Ubicacion': nueva_ubicacion
-                                        })
-                                        if success:
-                                            st.success(message)
-                                            st.session_state.modo_edicion = None
-                                            st.rerun()
-                                        else:
-                                            st.error(message)
+                                    if solo_precios:
+                                        # Solo actualizar precios
+                                        producto_data['Precio_Sugerido'] = float(nuevo_precio_sugerido)
+                                        producto_data['Precio_Venta'] = float(nuevo_precio_venta)
+                                        guardar_inventario()
+                                        st.success("✅ Precios actualizados correctamente")
+                                        st.session_state.modo_edicion = None
+                                        st.rerun()
                                     
                                     if guardar:
-                                        datos_actualizados = {
-                                            'Categoria': nueva_categoria,
-                                            'Producto': nuevo_producto,
-                                            'Talla': nueva_talla,
-                                            'Color': nuevo_color,
-                                            'Entrada_Total': nueva_cantidad,
-                                            'Precio_Sugerido': nuevo_precio_sugerido,
-                                            'Precio_Venta': nuevo_precio_venta,
-                                            'Ubicacion': nueva_ubicacion
-                                        }
-                                        
-                                        success, message = editar_producto(producto_id, datos_actualizados)
-                                        if success:
-                                            st.success(message)
+                                        # Validaciones
+                                        if not nuevo_producto or not nuevo_color or not nueva_talla:
+                                            st.error("❌ Completa los campos obligatorios (*)")
+                                        elif nuevo_stock_total < 0:
+                                            st.error("❌ El stock total no puede ser negativo")
+                                        elif nueva_entrada_total < ventas_actuales:
+                                            st.error(f"❌ No puedes reducir la cantidad por debajo de las ventas ({ventas_actuales})")
+                                        else:
+                                            # Determinar nueva ubicación principal
+                                            if nuevo_stock_bodega > nuevo_stock_exhibido:
+                                                nueva_ubicacion = "Bodega"
+                                            elif nuevo_stock_exhibido > nuevo_stock_bodega:
+                                                nueva_ubicacion = "Exhibido"
+                                            else:
+                                                nueva_ubicacion = "Exhibido"  # Por defecto si son iguales
+                                            
+                                            # Actualizar producto
+                                            producto_data['Categoria'] = nueva_categoria
+                                            producto_data['Producto'] = nuevo_producto
+                                            producto_data['Talla'] = nueva_talla
+                                            producto_data['Color'] = nuevo_color
+                                            producto_data['Entrada_Total'] = nueva_entrada_total
+                                            producto_data['Stock_Bodega'] = nuevo_stock_bodega
+                                            producto_data['Stock_Exhibido'] = nuevo_stock_exhibido
+                                            producto_data['Stock_Total'] = nuevo_stock_total
+                                            producto_data['Precio_Sugerido'] = float(nuevo_precio_sugerido)
+                                            producto_data['Precio_Venta'] = float(nuevo_precio_venta)
+                                            producto_data['Ubicacion'] = nueva_ubicacion
+                                            
+                                            guardar_inventario()
+                                            st.success("✅ Producto actualizado correctamente")
+                                            st.info(f"📍 **Nueva ubicación principal:** {nueva_ubicacion}")
                                             st.session_state.modo_edicion = None
                                             st.rerun()
-                                        else:
-                                            st.error(message)
                 
                 # MODO: ELIMINAR PRODUCTO
                 elif st.session_state.modo_edicion == 'eliminar':
